@@ -1,13 +1,14 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { AccessToken, TrackSource } from "livekit-server-sdk"
 import {prisma} from "../../lib/prisma"
+import { TipoCanal } from "../../generated/prisma/enums";
 export const LiveKit: (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook('onRequest', async (req,rep) => {
         try {
             await req.jwtVerify();
         } catch(e) {
-            rep.code(400).send({mensagem:"Sem autorização"});
+            return rep.code(400).send({mensagem:"Sem autorização"});
         }
     })
 
@@ -21,11 +22,15 @@ fastify.get("/livekit/token", { schema: { querystring: Type.Object({ salaId: Typ
     const { salaId} = req.query;
     const idUsuario = req.user.id;
 
-    const sala = prisma.servidor
+    const sala = await prisma.canal.findFirst({where: {id:salaId,tipo: TipoCanal.VOZ, servidor: {membros: {some: {usuarioId: idUsuario}}}},select: {id:true, servidor: {select: {membros: {where: {usuarioId:idUsuario}, select: {usuario: {select: {nome: true}}}}}}}});
 
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity: idUsuario });
+    if(!sala || !sala.servidor.membros[0]?.usuario) {
+        return rep.code(400).send({mensagem:"Sem permissão!"});
+    }
 
-    at.addGrant({ roomJoin: true, room: salaId, canPublish: true, canSubscribe: true});
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity: idUsuario,name: sala.servidor.membros[0].usuario.nome});
+
+    at.addGrant({ roomJoin: true, room: sala.id, canPublish: true, canSubscribe: true});
 
     return rep.code(200).send({ token: await at.toJwt(), url: LIVEKIT_URL });
     })

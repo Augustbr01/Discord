@@ -43,7 +43,7 @@ export const AuthDiscord: (FastifyPluginAsyncTypebox) = async (fastify) => {
             secure: MODO === "development" ? false : true,
             sameSite: "lax",
             maxAge: 60 * 60 * 24 * 7
-        }).send({ ok: true });
+        }).redirect("/");
     })
 }
 

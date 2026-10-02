@@ -12,7 +12,7 @@ export const RotaAuth : FastifyPluginAsyncTypebox = async (fastify) => {
         try {
             await req.jwtVerify();
         }catch(e) {
-            rep.code(400).send({mensagem:"Erro ao validar usuário"});
+            return rep.code(400).send({mensagem:"Erro ao validar usuário"});
         }
     })
 

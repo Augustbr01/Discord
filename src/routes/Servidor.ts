@@ -1,12 +1,13 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
+import { Permissao } from "../../generated/prisma/enums";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook("onRequest", async (req,rep) => {
         try {
             await req.jwtVerify();
         }catch(e) {
-            rep.code(404).send({mensagem:"ERRO AO VALIDAR USUÁRIO"});
+            return rep.code(404).send({mensagem:"ERRO AO VALIDAR USUÁRIO"});
         }
     })
 
@@ -101,9 +102,56 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send(entidade);
     })
 
-    fastify.post("/servidor/convite-criar", {schema: {body: Type.Object({idServidor:Type.String(),expiraEm:Type.Optional(Type.Number())})}} ,async (req,rep) => {
+    fastify.post("/servidor/convite-criar", {schema: {body: Type.Object({idServidor:Type.String(),expiraEm:Type.Optional(Type.Integer({minimum: 60, maximum: 60 * 60 * 24 * 30}))})}} ,async (req,rep) => {
         const {idServidor,expiraEm} = req.body;
         const idUsuario = req.user.id;
+
+        const entidade = await prisma.usuarioServidor.findUnique({where: {usuarioId_servidorId: {usuarioId:idUsuario,servidorId:idServidor}, permissao: Permissao.ADMIN}});
+
+        if(!entidade) {
+            return rep.code(401).send({mensagem:"Você não possui permissão"});
+        }
+
+        const convite = await prisma.convite.create({data: {
+            servidorId: idServidor,
+            criadoPorId: idUsuario,
+            expiraEm: !expiraEm ? null : new Date(Date.now() + (expiraEm * 1000))
+        },select: {
+            id:true,
+            criadoEm:true,
+            expiraEm:true
+        }})
+
+        return rep.code(200).send(convite);
+    })
+
+    fastify.post("/servidor/convite/:id",{schema: {params: Type.Object({id: Type.String()})}},async (req,rep) => {
+        const idUsuario = req.user.id;
+        const {id} = req.params;
+
+        const entidade = await prisma.convite.findFirst({where: {id:id, OR: [{expiraEm:null},{expiraEm: {gt: new Date()}}]}, select: {servidorId: true,servidor: {select: {membros: {where: {usuarioId:idUsuario}}}}}});
         
+        if(!entidade) {
+            return rep.code(400).send({mensagem:"Código inválido ou expirado"});
+        }
+
+        if(entidade.servidor.membros.length > 0) {
+            return rep.code(400).send({mensagem:"Você já é membro deste servidor"});
+        }
+
+        const criado = await prisma.usuarioServidor.create({data: {
+            usuarioId:idUsuario,
+            servidorId:entidade.servidorId
+        }, select: {
+            servidor: {
+                select: {
+                    id:true,
+                    nome:true,
+                    iconeUrl:true
+                }
+            }
+        }})
+
+        return rep.code(200).send(criado);
     })
 }
