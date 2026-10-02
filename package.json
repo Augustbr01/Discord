@@ -1,0 +1,34 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.10.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "name": "liberdade",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/jwt": "^10.2.2",
+    "@fastify/oauth2": "^8.3.0",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "dotenv": "^18.0.5",
+    "esbuild": "^0.28.2",
+    "fastify": "^5.12.5",
+    "livekit-server-sdk": "^2.19.1",
+    "pg": "^8.23.1",
+    "undici-types": "^8.9.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

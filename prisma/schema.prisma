@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TipoCanal {
+  TEXTO
+  VOZ
+}
+
+model Usuario {
+  id String @id @db.Uuid @default(uuid(7))
+  discordId String @unique @db.VarChar(255)
+  nome String @unique @db.VarChar(50)
+  avatarUrl String
+  email String?
+  entrou_em DateTime @default(now())
+
+  servidores Servidor[]
+
+  @@map("usuarios")
+}
+
+model Servidor {
+  id String @id @default(uuid(7)) @db.Uuid
+  nome String @db.VarChar(100)
+  iconeUrl String?
+  donoId String @db.Uuid
+  criadoEm DateTime @default(now())
+
+  dono Usuario @relation(fields: [donoId],references: [id])
+  canais Canal[]
+
+  @@map("servidores")
+}
+
+model Canal {
+  id String @id @db.Uuid @default(uuid(7))
+  servidorId String @db.Uuid
+  nome String @db.VarChar(50)
+  tipo TipoCanal
+  criadoEm DateTime @default(now())
+
+  servidor Servidor @relation(fields: [servidorId],references: [id], onDelete: Cascade)
+
+  @@map("canais")
+}
+
