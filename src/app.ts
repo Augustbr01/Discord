@@ -47,7 +47,7 @@ app.register(oauth2, {
         auth: oauth2.DISCORD_CONFIGURATION
     },
     startRedirectPath: "/api/auth/discord",
-    callbackUri: MODO === "development" ? "http://localhost:3000/api/auth/callback" : "https://discord.phelipedev.com.br/api/auth/callback"
+    callbackUri: MODO === "development" ? "http://localhost:5173/api/auth/callback" : "https://discord.phelipedev.com.br/api/auth/callback"
 })
 app.register(AuthDiscord, {prefix:"/api"});
 app.register(RotasServidor, {prefix:"/api"})

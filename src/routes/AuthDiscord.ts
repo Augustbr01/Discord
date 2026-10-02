@@ -37,7 +37,7 @@ export const AuthDiscord: (FastifyPluginAsyncTypebox) = async (fastify) => {
         const tokenPayload = fastify.jwt.sign({ id: user.id });
         console.log(tokenPayload);
 
-        return rep.code(201).setCookie("authToken", tokenPayload, {
+        return rep.setCookie("authToken", tokenPayload, {
             path: "/",
             httpOnly: true,
             secure: MODO === "development" ? false : true,

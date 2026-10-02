@@ -5,9 +5,9 @@ export default defineConfig({
     plugins: [react()],
     server: {
         allowedHosts: ["liberdade.phelipedev.com.br"],
-        // repassa /livekit/* pro Fastify, assim não precisa de CORS
+        // repassa /api/* pro Fastify, assim não precisa de CORS
         proxy: {
-            "/livekit": "http://localhost:3000",
+            "/api": "http://localhost:3000",
         },
     },
 });
