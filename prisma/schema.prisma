@@ -17,6 +17,11 @@ enum TipoCanal {
   VOZ
 }
 
+enum Permissao {
+  MEMBRO
+  ADMIN
+}
+
 model Usuario {
   id String @id @db.Uuid @default(uuid(7))
   discordId String @unique @db.VarChar(255)
@@ -26,7 +31,9 @@ model Usuario {
   entrou_em DateTime @default(now())
 
   servidores Servidor[]
-
+  membrosDe UsuarioServidor[]
+  mensagens Mensagem[]
+  convites Convite[]
   @@map("usuarios")
 }
 
@@ -39,8 +46,26 @@ model Servidor {
 
   dono Usuario @relation(fields: [donoId],references: [id])
   canais Canal[]
+  convites Convite[]
+  membros UsuarioServidor[]
 
   @@map("servidores")
+}
+
+model UsuarioServidor {
+  id String @id @db.Uuid @default(uuid(7))
+  usuarioId String @db.Uuid
+  servidorId String @db.Uuid
+  permissao Permissao @default(MEMBRO)
+  entrouEm DateTime @default(now())
+
+  @@unique([usuarioId,servidorId])
+  @@index([servidorId])
+
+  usuario Usuario @relation(fields: [usuarioId],references: [id],onDelete: Cascade)
+  servidor Servidor @relation(fields: [servidorId],references: [id],onDelete: Cascade)
+
+  @@map("usuario_servidor")
 }
 
 model Canal {
@@ -51,7 +76,34 @@ model Canal {
   criadoEm DateTime @default(now())
 
   servidor Servidor @relation(fields: [servidorId],references: [id], onDelete: Cascade)
-
+  mensagens Mensagem[]
+  @@index([servidorId])
   @@map("canais")
+}
+
+model Convite {
+  id String @id @db.Uuid @default(uuid(7))
+  servidorId String @db.Uuid
+  criadoPorId String @db.Uuid
+  expiraEm DateTime?
+  criadoEm DateTime @default(now()) 
+
+  servidor Servidor @relation(fields: [servidorId],references: [id],onDelete: Cascade)
+  criador Usuario @relation(fields: [criadoPorId],references: [id],onDelete: Cascade)
+  @@map("convites")
+}
+
+model Mensagem {
+  id String @id @db.Uuid @default(uuid(7))
+  canalId String @db.Uuid
+  autorId String @db.Uuid
+  conteudo String @db.VarChar(200)
+  editadaEm DateTime?
+  criadoEm DateTime @default(now())
+
+  @@index([canalId,criadoEm])
+  canal Canal @relation(fields: [canalId],references: [id],onDelete: Cascade)
+  autor Usuario @relation(fields: [autorId],references: [id],onDelete: Cascade)
+  @@map("mensagens")
 }
 

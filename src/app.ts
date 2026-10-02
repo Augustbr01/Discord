@@ -1,10 +1,14 @@
 import fastify from "fastify"
-import {Type, type TypeBoxTypeProvider} from "@fastify/type-provider-typebox"
-import { AccessToken, TrackSource } from "livekit-server-sdk"
+import {type TypeBoxTypeProvider} from "@fastify/type-provider-typebox"
 import { fastifyJwt } from "@fastify/jwt"
-import { RotaAuth } from "./routes/Auth"
+import { RotaAuth } from "./routes/AuthUsuario"
+import { LiveKit } from "./routes/LiveKit"
 import oauth2 from "@fastify/oauth2"
 import { fastifyCookie } from "@fastify/cookie"
+import swagger from "@fastify/swagger"
+import swaggerUi from "@fastify/swagger-ui"
+import { AuthDiscord } from "./routes/AuthDiscord"
+import { RotasServidor } from "./routes/Servidor"
 import "dotenv/config"
 const {JWT_SECRET,MODO,DISCORD_CLIENT_ID,DISCORD_CLIENT_SECRET,LIVEKIT_API_KEY,LIVEKIT_API_SECRET,LIVEKIT_URL} = process.env;
 
@@ -14,23 +18,23 @@ if(!JWT_SECRET || !MODO || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !LIVE
 
 const app = fastify().withTypeProvider<TypeBoxTypeProvider>();
 
+app.register(swagger, {
+    openapi: {
+        info: { title: "Liberdade API", version: "1.0.0" },
+        components: {
+            securitySchemes: {
+                bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+            },
+        },
+        security: [{ bearerAuth: [] }], // aplica em todas as rotas
+    },
+})
+
+app.register(swaggerUi, {routePrefix: "/docs"});
+
 app.register(fastifyJwt, {secret:JWT_SECRET, cookie: {cookieName: "authToken",signed:false} ,sign: {expiresIn: "7d"}});
 
-app.register(fastifyCookie, {parseOptions: {path: "/", httpOnly: MODO === "development" ? false : true, sameSite: "lax", maxAge: 3600 * 24 * 7}});
-
-
-app.get("/livekit/token", {schema: {querystring: Type.Object({sala: Type.String({default: "teste"}),nome: Type.String({minLength: 1})})}},async (req,rep) => {
-    const {sala, nome} = req.query;
-
-    const at = new AccessToken(LIVEKIT_API_KEY,LIVEKIT_API_SECRET, {identity: nome});
-
-    at.addGrant({roomJoin:true,room: sala, canPublish: true,canSubscribe: true,canPublishSources:[TrackSource.CAMERA,TrackSource.MICROPHONE]});
-
-
-    return rep.send({token: await at.toJwt(), url: LIVEKIT_URL});
-})                                                      
-
-app.register(RotaAuth, {prefix: "/api"})
+app.register(fastifyCookie, {parseOptions: {path: "/",secure: MODO === "development" ? false : true ,httpOnly: true, sameSite: "lax", maxAge: 3600 * 24 * 7}});
 
 app.register(oauth2, {
     name:"discord",
@@ -45,7 +49,10 @@ app.register(oauth2, {
     startRedirectPath: "/api/auth/discord",
     callbackUri: MODO === "development" ? "http://localhost:3000/api/auth/callback" : "https://discord.phelipedev.com.br/api/auth/callback"
 })
-
+app.register(AuthDiscord, {prefix:"/api"});
+app.register(RotasServidor, {prefix:"/api"})
+app.register(RotaAuth, {prefix:"/api"});
+app.register(LiveKit,{prefix:"/api"});
 
 app.listen({port:3000}, (error) => {
     console.log("ligou");
