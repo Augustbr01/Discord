@@ -10,6 +10,7 @@ import { ChatSalaProvider } from "./contexto/ChatSala";
 import { ControleVozProvider } from "./contexto/ControleVoz";
 import { ToastProvider, useToast } from "./contexto/Toasts";
 import { useServidor } from "./hooks/useServidor";
+import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
 import { extrairIdConvite, lerArmazenado, salvarArmazenado } from "./lib/util";
 import type { MapaMembros, Voz } from "./tipos";
@@ -114,7 +115,7 @@ function Aplicacao() {
         toast.erro(mensagemDeErro(err));
     }, [toast]);
 
-    const { servidor: servidorCarregado, setServidor, recarregar } = useServidor(eu ? servidorId : null, tratarErro);
+    const { servidor: servidorCarregado, setServidor } = useServidor(eu ? servidorId : null, tratarErro);
     // evita mostrar por um instante o servidor anterior enquanto o novo carrega
     const servidor = servidorCarregado?.id === servidorId ? servidorCarregado : null;
 
@@ -126,6 +127,14 @@ function Aplicacao() {
 
     // 2. logado: usa o convite pendente (se tiver) e carrega os servidores
     const euId = eu?.id;
+
+    // conexão em tempo real: abre ao logar, fecha ao sair
+    useEffect(() => {
+        if (!euId) return;
+        gateway.conectar();
+        return () => gateway.desconectar();
+    }, [euId]);
+
     useEffect(() => {
         if (!euId) return;
         let ativo = true;
@@ -218,7 +227,7 @@ function Aplicacao() {
             const conexao = await api.tokenVoz(canal.id);
             if (voz) setSessaoVoz((n) => n + 1);
             setVoz({ canal, servidorId: servidor.id, servidorNome: servidor.nome, conexao, desde: Date.now() });
-            setTimeout(recarregar, 2500);
+            // o gateway avisa os outros que você entrou (ENTROU_NA_CALL); nada a recarregar
         } catch (err) {
             tratarErro(err);
         } finally {
@@ -235,8 +244,8 @@ function Aplicacao() {
 
     const sairDaVoz = useCallback(() => {
         setVoz(null);
-        setTimeout(recarregar, 1500);
-    }, [recarregar]);
+        // o gateway avisa os outros que você saiu (SAIU_DA_CALL)
+    }, []);
 
     function abrirChamada() {
         if (!voz) return;

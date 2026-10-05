@@ -2,6 +2,7 @@ import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typ
 import {prisma} from "../../lib/prisma"
 import { Permissao,TipoCanal } from "../../generated/prisma/enums";
 import { participantesDaCall } from "../eventosCall";
+import { publicarParaServidor } from "./eventosConexao";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook("onRequest", async (req,rep) => {
@@ -145,8 +146,11 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         },select: {
             id:true,
             nome:true,
+            criadoEm: true,
             tipo:true
         }})
+
+        await publicarParaServidor(servidorId,{tipo:"CANAL_CRIADO",servidorId,canal:{id:canal.id,tipo: canal.tipo,criado_em:canal.criadoEm,nome:canal.nome}})
         return rep.code(201).send(canal);
     })
 

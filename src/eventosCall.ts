@@ -18,3 +18,7 @@ export function saiuDaCall(canalId: string, usuarioId: string) {
 export function participantesDaCall(canalId: string) {
     return [...(calls.get(canalId) ?? [])];
 }
+
+export function limparCall(canalId: string) {
+    calls.delete(canalId);
+}

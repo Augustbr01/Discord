@@ -69,7 +69,23 @@ export const api = {
     sair: () => chamar<void>("/logout", post()),
 
     listarServidores: () => chamar<ServidorResumo[]>("/servidor/listar"),
-    obterServidor: (id: string) => chamar<ServidorDetalhe>(`/servidor/${id}`),
+    obterServidor: async (id: string): Promise<ServidorDetalhe> => {
+        // o back manda `pessoasVoz: { canalId: [usuarioId] }`; aqui cruzamos com os
+        // membros pra virar o `participantes: Usuario[]` que o painel de canais já espera
+        const bruto = await chamar<ServidorDetalhe & { pessoasVoz?: Record<string, string[]> }>(`/servidor/${id}`);
+        const porId = new Map(bruto.membros.map((m) => [m.usuario.id, m.usuario]));
+        const canais = bruto.canais.map((c) =>
+            c.tipo === "VOZ"
+                ? {
+                      ...c,
+                      participantes: (bruto.pessoasVoz?.[c.id] ?? [])
+                          .map((uid) => porId.get(uid))
+                          .filter((u): u is Usuario => u !== undefined),
+                  }
+                : c,
+        );
+        return { ...bruto, canais };
+    },
     criarServidor: (nomeServidor: string) => chamar<ServidorResumo>("/servidor/criar", post({ nomeServidor })),
     criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal) =>
         chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala })),

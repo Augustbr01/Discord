@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { conectar } from "./eventosConexao";
+import { conectar, publicarParaServidor, publicarParaUsuarios } from "./eventosConexao";
 
 export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
 
@@ -13,7 +13,7 @@ export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
 
     fastify.get("/gateway", {websocket: true}, async (socket,req) => {
         const desconectar = conectar(req.user.id,socket);
-        
+
         socket.on("close", () => {
             desconectar();
         })

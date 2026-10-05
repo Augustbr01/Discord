@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ErroApi, type Mensagem, type Usuario } from "../api";
+import { gateway } from "../lib/gateway";
 import { idLocal } from "../lib/util";
-
-const ATUALIZAR_MS = 4000;
 
 // mensagem que você mandou e ainda não voltou do servidor
 export type MensagemLocal = {
@@ -20,7 +19,7 @@ function ordenar(lista: Mensagem[]) {
     return [...lista].sort((a, b) => new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime());
 }
 
-// histórico de um canal de texto: busca, atualiza de tempos em tempos e envia
+// histórico de um canal de texto: busca o inicial e recebe as novas pelo gateway
 export function useMensagens(canalId: string, eu: Usuario) {
     const [estado, setEstado] = useState<EstadoChat>("carregando");
     const [mensagens, setMensagens] = useState<Mensagem[]>([]);
@@ -28,7 +27,6 @@ export function useMensagens(canalId: string, eu: Usuario) {
 
     useEffect(() => {
         let ativo = true;
-        let timer: number | undefined;
 
         setEstado("carregando");
         setMensagens([]);
@@ -40,24 +38,32 @@ export function useMensagens(canalId: string, eu: Usuario) {
                 if (!ativo) return;
                 setMensagens(ordenar(lista));
                 setEstado("pronto");
-                timer = window.setTimeout(() => buscar(false), ATUALIZAR_MS);
             } catch (err) {
                 if (!ativo) return;
                 if (err instanceof ErroApi && (err.status === 404 || err.status === 405)) {
-                    // rota não existe: para de tentar
+                    // rota não existe: nada a fazer
                     setEstado("indisponivel");
                     return;
                 }
                 if (primeira) setEstado("erro");
-                timer = window.setTimeout(() => buscar(false), ATUALIZAR_MS * 2);
             }
         };
 
         buscar(true);
 
+        // mensagem nova deste canal chega pelo gateway (dedup por id porque quem
+        // enviou também recebe o próprio evento, além da resposta do POST)
+        const pararEventos = gateway.assinar((evento) => {
+            if (!ativo || evento.tipo !== "MENSAGEM_CRIADA" || evento.canalId !== canalId) return;
+            setMensagens((m) => (m.some((x) => x.id === evento.mensagem.id) ? m : ordenar([...m, evento.mensagem])));
+        });
+        // ao reconectar, rebusca pra pegar o que chegou enquanto esteve offline
+        const pararReconexao = gateway.aoReconectar(() => buscar(true));
+
         return () => {
             ativo = false;
-            window.clearTimeout(timer);
+            pararEventos();
+            pararReconexao();
         };
     }, [canalId]);
 
