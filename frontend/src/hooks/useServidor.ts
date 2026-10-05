@@ -27,6 +27,10 @@ function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
         if (evento.servidorId !== s.id || s.canais.some((c) => c.id === evento.canal.id)) return s;
         return { ...s, canais: [...s.canais, evento.canal] };
     }
+    if (evento.tipo === "CANAL_APAGADO") {
+        if (!s.canais.some((c) => c.id === evento.canalId)) return s; // não é daqui
+        return { ...s, canais: s.canais.filter((c) => c.id !== evento.canalId) };
+    }
     return s;
 }
 

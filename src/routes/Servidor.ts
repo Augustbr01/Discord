@@ -155,11 +155,11 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(201).send(canal);
     })
 
-    fastify.delete("/servidor/sala-deletar/:id", {schema: {params: Type.Object({idSala:Type.String(),idServidor: Type.String()})}} ,async (req,rep) => {
+    fastify.delete("/servidor/sala-deletar/:idSala", {schema: {params: Type.Object({idSala:Type.String()})}} ,async (req,rep) => {
         const {idSala} = req.params;
         const idUsuario = req.user.id;
         
-        const servidor = await prisma.canal.findUnique({where: {id:idSala},select: {servidorId: true}});
+        const servidor = await prisma.canal.findUnique({where: {id:idSala},select: {servidorId: true,tipo: true,nome: true,criadoEm:true}});
 
         if(!servidor) {
             return rep.code(404).send({mensagem:"Servidor não encontrado"});
@@ -167,14 +167,17 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
         const deletar = await prisma.canal.deleteMany({where: {id:idSala, servidor: {membros: {some: {usuarioId:idUsuario,permissao: Permissao.ADMIN}}}}});
 
+
         if(deletar.count === 0) {
             return rep.code(400).send({mensagem:"Falha deletar o canal"});
         }
 
-        limparCall(idSala);
-        await roomService.deleteRoom(idSala);
+        if(servidor.tipo === TipoCanal.VOZ) {
+            limparCall(idSala);
+            await roomService.deleteRoom(idSala).catch((e) => {});
+        }
 
-        publicarParaServidor(servidor.servidorId)
+        publicarParaServidor(servidor.servidorId, {tipo: "CANAL_APAGADO",servidorId:servidor.servidorId,canalId:idSala});
 
         return rep.code(200).send({mensagem:"Canal deletado com sucesso"})
     })

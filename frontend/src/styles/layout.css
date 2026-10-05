@@ -261,6 +261,43 @@
     transition: background 0.1s, color 0.1s;
 }
 
+/* ações do canal (engrenagem) que surgem no hover */
+.canal-linha {
+    position: relative;
+}
+
+.canal-acoes {
+    position: absolute;
+    top: 6px;
+    right: 5px;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.canal-linha:hover .canal-acoes,
+.canal-acoes.fixo {
+    opacity: 1;
+}
+
+.canal-acao {
+    color: var(--texto-3);
+}
+
+.menu-canal {
+    top: calc(100% + 2px);
+    right: 0;
+    min-width: 180px;
+}
+
+.menu-item-perigo {
+    color: var(--perigo);
+}
+
+.menu-item-perigo:hover {
+    background: var(--perigo-suave);
+    color: var(--perigo);
+}
+
 .canal-icone {
     flex-shrink: 0;
     color: var(--texto-4);

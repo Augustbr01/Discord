@@ -18,4 +18,5 @@ export type EventoGateway =
     | { tipo: "ENTROU_NA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "SAIU_DA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "CANAL_CRIADO"; servidorId: string; canal: Canal }
+    | { tipo: "CANAL_APAGADO"; servidorId: string; canalId: string }
     | { tipo: "MENSAGEM_CRIADA"; canalId: string; mensagem: Mensagem };

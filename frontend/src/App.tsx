@@ -308,6 +308,17 @@ function Aplicacao() {
         selecionarCanal(servidor.id, novo);
     }
 
+    const apagarCanal = useCallback(async (canal: Canal) => {
+        if (!window.confirm(`Apagar o canal "${canal.nome}"? Isso não pode ser desfeito.`)) return;
+        try {
+            await api.apagarCanal(canal.id);
+            // some na hora pra quem apagou; o CANAL_APAGADO também chega e é idempotente
+            setServidor((s) => (s ? { ...s, canais: s.canais.filter((c) => c.id !== canal.id) } : s));
+        } catch (err) {
+            tratarErro(err);
+        }
+    }, [setServidor, tratarErro]);
+
     // ---------- dados derivados ----------
 
     // id do usuário -> sala em que está (aparece na lista de membros)
@@ -473,6 +484,7 @@ function Aplicacao() {
                             souAdmin={souAdmin}
                             membros={membros}
                             onCanal={abrirCanal}
+                            onApagarCanal={apagarCanal}
                             onConvidar={() => setModal({ tipo: "convidar" })}
                             onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
                             onAbrirChamada={abrirChamada}

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Hash, Loader2, Plus, UserPlus, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
 import type { Canal, ServidorDetalhe, TipoCanal, Usuario } from "../api";
 import { useControleVoz } from "../contexto/ControleVoz";
 import { useCliqueFora } from "../hooks/useCliqueFora";
@@ -20,6 +20,7 @@ type Props = {
     souAdmin: boolean;
     membros: MapaMembros;
     onCanal: (canal: Canal) => void;
+    onApagarCanal: (canal: Canal) => void;
     onConvidar: () => void;
     onNovoCanal: (tipo: TipoCanal) => void;
     onAbrirChamada: () => void;
@@ -55,15 +56,17 @@ export function PainelCanais(props: Props) {
                     <>
                         <Grupo titulo="Canais de texto" onCriar={souAdmin ? () => props.onNovoCanal("TEXTO") : undefined}>
                             {texto.map((c) => (
-                                <button
-                                    key={c.id}
-                                    className={`canal ${canalAtualId === c.id ? "ativo" : ""}`}
-                                    onClick={() => props.onCanal(c)}
-                                    aria-current={canalAtualId === c.id ? "page" : undefined}
-                                >
-                                    <Hash size={18} className="canal-icone" />
-                                    <span className="truncar">{c.nome}</span>
-                                </button>
+                                <div key={c.id} className="canal-linha">
+                                    <button
+                                        className={`canal ${canalAtualId === c.id ? "ativo" : ""}`}
+                                        onClick={() => props.onCanal(c)}
+                                        aria-current={canalAtualId === c.id ? "page" : undefined}
+                                    >
+                                        <Hash size={18} className="canal-icone" />
+                                        <span className="truncar">{c.nome}</span>
+                                    </button>
+                                    {souAdmin && <AcoesCanal canal={c} onApagar={props.onApagarCanal} />}
+                                </div>
                             ))}
                         </Grupo>
 
@@ -73,14 +76,17 @@ export function PainelCanais(props: Props) {
                                 const pessoas = c.participantes ?? [];
                                 return (
                                     <div key={c.id} className="sala">
-                                        <button
-                                            className={`canal ${canalAtualId === c.id ? "ativo" : ""} ${conectado ? "conectado" : ""}`}
-                                            onClick={() => props.onCanal(c)}
-                                        >
-                                            <Volume2 size={18} className="canal-icone" />
-                                            <span className="truncar">{c.nome}</span>
-                                            {entrandoEm === c.id && <Loader2 size={14} className="girar canal-carregando" />}
-                                        </button>
+                                        <div className="canal-linha">
+                                            <button
+                                                className={`canal ${canalAtualId === c.id ? "ativo" : ""} ${conectado ? "conectado" : ""}`}
+                                                onClick={() => props.onCanal(c)}
+                                            >
+                                                <Volume2 size={18} className="canal-icone" />
+                                                <span className="truncar">{c.nome}</span>
+                                                {entrandoEm === c.id && <Loader2 size={14} className="girar canal-carregando" />}
+                                            </button>
+                                            {souAdmin && <AcoesCanal canal={c} onApagar={props.onApagarCanal} />}
+                                        </div>
 
                                         {conectado ? (
                                             <PessoasAoVivo membros={membros} eu={eu} surdo={surdo} />
@@ -162,6 +168,45 @@ function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal }: Cabe
                     </button>
                     <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("VOZ"))}>
                         Criar sala de voz <Volume2 size={16} />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// engrenagem que aparece no hover do canal (admin) e abre o menu de ações
+function AcoesCanal({ canal, onApagar }: { canal: Canal; onApagar: (c: Canal) => void }) {
+    const [aberto, setAberto] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const fechar = useCallback(() => setAberto(false), []);
+    useCliqueFora(ref, aberto, fechar);
+
+    return (
+        <div className={`canal-acoes menu-ancora ${aberto ? "fixo" : ""}`} ref={ref}>
+            <Dica texto="Configurações">
+                <button
+                    className="botao-icone botao-icone-mini canal-acao"
+                    onClick={() => setAberto((v) => !v)}
+                    aria-label={`Configurações do canal ${canal.nome}`}
+                    aria-haspopup="menu"
+                    aria-expanded={aberto}
+                >
+                    <Settings size={15} />
+                </button>
+            </Dica>
+
+            {aberto && (
+                <div className="menu menu-canal" role="menu">
+                    <button
+                        role="menuitem"
+                        className="menu-item menu-item-perigo"
+                        onClick={() => {
+                            fechar();
+                            onApagar(canal);
+                        }}
+                    >
+                        Apagar canal <Trash2 size={16} />
                     </button>
                 </div>
             )}

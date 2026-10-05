@@ -89,6 +89,7 @@ export const api = {
     criarServidor: (nomeServidor: string) => chamar<ServidorResumo>("/servidor/criar", post({ nomeServidor })),
     criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal) =>
         chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala })),
+    apagarCanal: (canalId: string) => chamar<void>(`/servidor/sala-deletar/${canalId}`, { method: "DELETE" }),
 
     // expiraEm = segundos até expirar; undefined = convite permanente
     criarConvite: (idServidor: string, expiraEm?: number) =>
