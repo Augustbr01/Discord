@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { conectar } from "./eventosConexao";
 
 export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
 
@@ -10,21 +11,11 @@ export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
         }
     })
 
-    fastify.get("/api/websocket", {websocket: true}, async (socket,req) => {
-        const usuarioId = req.user.id;
-
-        let vivo = true;
-
-        socket.on("pong", () => {vivo = true});
+    fastify.get("/gateway", {websocket: true}, async (socket,req) => {
+        const desconectar = conectar(req.user.id,socket);
         
-        const hb = setInterval(() => {
-            if(!vivo) return socket.terminate();
-            vivo = false;
-            socket.ping();
-        },3000)
-
         socket.on("close", () => {
-            clearInterval(hb);
+            desconectar();
         })
     })
 }

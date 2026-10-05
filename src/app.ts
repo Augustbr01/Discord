@@ -10,6 +10,7 @@ import swaggerUi from "@fastify/swagger-ui"
 import { AuthDiscord } from "./routes/AuthDiscord"
 import fastifyWebsocket from "@fastify/websocket"
 import { RotasServidor } from "./routes/Servidor"
+import { routeWebSocket } from "./routes/WebSocketMain"
 import { routeHook } from "./routes/WebHook"
 import "dotenv/config"
 const {JWT_SECRET,MODO,DISCORD_CLIENT_ID,DISCORD_CLIENT_SECRET,LIVEKIT_API_KEY,LIVEKIT_API_SECRET,LIVEKIT_URL} = process.env;
@@ -62,6 +63,7 @@ app.register(oauth2, {
 app.register(routeHook,{prefix:"/api"});
 app.register(AuthDiscord, {prefix:"/api"});
 app.register(RotasServidor, {prefix:"/api"})
+app.register(routeWebSocket,{prefix:"/api"});
 app.register(RotaAuth, {prefix:"/api"});
 app.register(LiveKit,{prefix:"/api"});
 

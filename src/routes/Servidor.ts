@@ -1,6 +1,7 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
 import { Permissao,TipoCanal } from "../../generated/prisma/enums";
+import { participantesDaCall } from "../eventosCall";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook("onRequest", async (req,rep) => {
@@ -99,7 +100,9 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             return rep.code(404).send({mensagem:"Erro ao buscar servidor!"});
         }
 
-        return rep.code(200).send(entidade);
+        const pessoasVoz = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((c) => [c.id,participantesDaCall(c.id)]));
+
+        return rep.code(200).send({...entidade,pessoasVoz});
     })
 
     fastify.post("/servidor/convite-criar", {schema: {body: Type.Object({idServidor:Type.String(),expiraEm:Type.Optional(Type.Integer({minimum: 60, maximum: 60 * 60 * 24 * 30}))})}} ,async (req,rep) => {
