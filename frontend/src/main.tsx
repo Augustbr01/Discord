@@ -1,7 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@livekit/components-styles";
-import "./index.css";
+import "@fontsource-variable/inter";
+import "./styles/base.css";
+import "./styles/layout.css";
+import "./styles/chat.css";
+import "./styles/chamada.css";
+import "./styles/telas.css";
 import App from "./App";
 
 createRoot(document.getElementById("root")!).render(

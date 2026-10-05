@@ -1,6 +1,6 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
-import { Permissao } from "../../generated/prisma/enums";
+import { Permissao,TipoCanal } from "../../generated/prisma/enums";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook("onRequest", async (req,rep) => {
@@ -123,6 +123,28 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         }})
 
         return rep.code(200).send(convite);
+    })
+
+    fastify.post("/servidor/sala-criar", {schema: {body: Type.Object({servidorId: Type.String(),tipoSala: Type.Enum(TipoCanal),nomeCanal: Type.String({minLength: 1, maxLength: 50})})}},async (req,rep) => {
+        const {servidorId,tipoSala,nomeCanal} = req.body;
+        const idUsuario = req.user.id;
+
+        const servidor = await prisma.servidor.findFirst({where:{id:servidorId, membros: {some: {usuarioId: idUsuario, permissao: Permissao.ADMIN}}}});
+
+        if(!servidor) {
+            return rep.code(404).send({mensagem:"erro"});
+        }
+
+        const canal = await prisma.canal.create({data: {
+            servidorId:servidorId,
+            nome:nomeCanal,
+            tipo:tipoSala
+        },select: {
+            id:true,
+            nome:true,
+            tipo:true
+        }})
+        return rep.code(201).send(canal);
     })
 
     fastify.post("/servidor/convite/:id",{schema: {params: Type.Object({id: Type.String()})}},async (req,rep) => {
