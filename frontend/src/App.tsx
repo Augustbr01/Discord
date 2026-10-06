@@ -302,7 +302,8 @@ function Aplicacao() {
 
     function aoCriarCanal(novo: Canal) {
         if (!servidor) return;
-        setServidor((s) => (s ? { ...s, canais: [...s.canais, novo] } : s));
+        // dedup: o CANAL_CRIADO do WS pode ter adicionado antes da resposta do POST
+        setServidor((s) => (s && !s.canais.some((c) => c.id === novo.id) ? { ...s, canais: [...s.canais, novo] } : s));
         setModal(null);
         // abre o canal novo (numa sala de voz, abre a tela dela sem entrar sozinho)
         selecionarCanal(servidor.id, novo);

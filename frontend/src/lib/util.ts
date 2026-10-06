@@ -22,10 +22,10 @@ export function iniciais(nome: string) {
     return (partes[0][0] + partes[1][0]).toUpperCase();
 }
 
-// os avatares padrão do Discord são coloridos; esses viram iniciais em cinza
+// mostra qualquer avatar que o back mandar, inclusive os padrão do Discord
+// (embed/avatars). As iniciais só entram quando não há URL ou a imagem falha.
 export function avatarReal(url: string | null | undefined) {
-    if (!url) return null;
-    return /cdn\.discordapp\.com\/embed\/avatars\//.test(url) ? null : url;
+    return url ?? null;
 }
 
 // "Sessão" e "sessao" viram a mesma coisa na busca
