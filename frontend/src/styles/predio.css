@@ -1,0 +1,447 @@
+/* =========================================================
+   Prédio 3D: o canvas e o HUD por cima dele
+   (carregado junto com o prédio, só quando você entra nele)
+   ========================================================= */
+
+.predio-tela {
+    position: absolute !important;
+    inset: 0;
+    touch-action: none;
+}
+
+.predio.travado .predio-tela {
+    cursor: none;
+}
+
+/* ---------- topo ---------- */
+
+.predio-topo {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 3;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.predio-andar {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 60%;
+    padding: 10px 16px;
+    border-radius: 16px;
+    background: rgba(0, 25, 30, 0.78);
+    line-height: 1.25;
+}
+
+.predio-andar strong {
+    font-family: var(--fonte-titulo);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--manga);
+}
+
+.predio-andar span {
+    font-size: 13.5px;
+    color: var(--texto-2);
+}
+
+.predio-sair {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 13px;
+    background: rgba(0, 25, 30, 0.78);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--texto);
+    pointer-events: auto;
+    transition: background-color 0.15s;
+}
+
+.predio-sair:hover {
+    background: var(--casca-funda);
+}
+
+/* ---------- mira e ação ---------- */
+
+.predio-mira {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: var(--texto);
+    box-shadow: 0 0 0 2px rgba(0, 25, 30, 0.6);
+    pointer-events: none;
+}
+
+.predio-acao {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% + 32px);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    margin-inline: auto;
+    padding: 9px 16px 9px 10px;
+    border-radius: 999px;
+    background: var(--manga);
+    color: var(--tinta);
+    font-size: 14px;
+    font-weight: 650;
+    box-shadow: var(--sombra-flutuante);
+    animation: surgir-baixo 0.18s var(--curva);
+}
+
+.predio-acao kbd {
+    border-color: rgba(51, 27, 6, 0.35);
+    background: rgba(255, 255, 255, 0.35);
+    color: var(--tinta);
+}
+
+/* ---------- instruções (antes de travar o mouse) ---------- */
+
+.predio-comecar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(460px, calc(100% - 32px));
+    padding: 24px 24px 20px;
+    border-radius: 22px;
+    background: rgba(0, 25, 30, 0.86);
+    border: 1px solid var(--linha-casca);
+    box-shadow: var(--sombra-flutuante);
+    text-align: center;
+    translate: -50% -50%;
+    transition: border-color 0.15s;
+}
+
+.predio-comecar:hover {
+    border-color: var(--manga-borda);
+}
+
+.predio-comecar strong {
+    font-family: var(--fonte-titulo);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.predio-teclas {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 16px;
+    font-size: 13px;
+    color: var(--texto-2);
+}
+
+.predio-teclas > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.predio-comecar small {
+    max-width: 38ch;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--texto-3);
+}
+
+/* ---------- joystick (celular) ---------- */
+
+.predio-joystick {
+    position: absolute;
+    left: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(0, 25, 30, 0.55);
+    border: 1.5px solid var(--linha-casca);
+    touch-action: none;
+}
+
+.predio-joystick-pino {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--texto);
+    opacity: 0.9;
+    pointer-events: none;
+}
+
+/* ---------- chat do mural ---------- */
+
+.predio-chat {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    width: min(440px, calc(100% - 24px));
+    overflow: hidden;
+    border-radius: 20px;
+    background: var(--folha);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra-flutuante);
+    animation: entrar-direita 0.28s var(--curva);
+}
+
+.predio-chat-topo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    height: 56px;
+    padding: 0 8px 0 16px;
+    border-bottom: 1px solid var(--linha);
+    color: var(--texto-3);
+}
+
+.predio-chat-topo strong {
+    flex: 1;
+    font-family: var(--fonte-titulo);
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--texto);
+}
+
+.predio-chat .chat-inicio {
+    padding: 0 18px 16px;
+}
+
+.predio-chat .chat-inicio h2 {
+    font-size: 22px;
+}
+
+.predio-chat .mensagem {
+    grid-template-columns: 60px minmax(0, 1fr);
+    padding-right: 16px;
+}
+
+.predio-chat .divisor-dia {
+    margin-left: 60px;
+    margin-right: 16px;
+}
+
+.predio-chat .compositor-area {
+    padding: 0 12px 12px;
+}
+
+/* ---------- elevador ---------- */
+
+.predio-elevador {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 12, 16, 0.55);
+    animation: aparecer 0.15s ease;
+}
+
+.predio-elevador-painel {
+    width: min(380px, 100%);
+    padding: 20px;
+    border-radius: 24px;
+    background: #1a2a2d;
+    border: 1px solid var(--linha-2);
+    box-shadow: var(--sombra-flutuante);
+    animation: surgir 0.22s var(--curva);
+}
+
+.predio-elevador-painel h2 {
+    margin-bottom: 14px;
+    font-size: 21px;
+}
+
+.predio-elevador-painel ol {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.predio-elevador-painel ol button {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 8px 14px 8px 8px;
+    border-radius: 16px;
+    background: var(--folha);
+    text-align: left;
+    transition: background-color 0.15s;
+}
+
+.predio-elevador-painel ol button:hover {
+    background: var(--folha-3);
+}
+
+.predio-andar-numero {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--linha-2);
+    font-family: var(--fonte-titulo);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--texto-2);
+}
+
+.predio-elevador-painel button.aqui .predio-andar-numero {
+    border-color: var(--manga);
+    background: var(--manga);
+    color: var(--tinta);
+}
+
+.predio-andar-nome {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.predio-andar-nota {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--manga);
+}
+
+/* ---------- troca de andar ---------- */
+
+.predio-transicao {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: var(--casca);
+    animation: transicao-andar 0.95s ease forwards;
+    pointer-events: none;
+}
+
+.predio-transicao-numero {
+    font-family: var(--fonte-titulo);
+    font-size: 120px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--manga);
+}
+
+.predio-transicao-nome {
+    font-family: var(--fonte-titulo);
+    font-size: 24px;
+    font-weight: 650;
+    color: var(--texto);
+}
+
+@keyframes transicao-andar {
+    0%,
+    70% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .predio-topo {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+    }
+
+    .predio-andar {
+        padding: 8px 12px;
+    }
+
+    .predio-andar strong {
+        font-size: 17px;
+    }
+
+    .predio-sair {
+        height: 36px;
+        padding: 0 12px;
+    }
+
+    .predio-chat {
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        border-radius: 0;
+    }
+
+    .predio-transicao-numero {
+        font-size: 88px;
+    }
+}
+
+/* ---------- sem trava do mouse (alguns navegadores e páginas embutidas) ---------- */
+
+.predio.sem-trava .predio-tela {
+    cursor: grab;
+}
+
+.predio.sem-trava .predio-tela:active {
+    cursor: grabbing;
+}
+
+.predio-dica {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    z-index: 3;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    margin: 0 auto;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(0, 25, 30, 0.78);
+    font-size: 13px;
+    color: var(--texto-2);
+    text-align: center;
+    pointer-events: none;
+}

@@ -1,11 +1,9 @@
 import { Fragment, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowDown, Hash, Search, SendHorizontal, Users } from "lucide-react";
+import { ArrowDown, Hash, SendHorizontal } from "lucide-react";
 import { LIMITE_MENSAGEM, type Canal, type Usuario } from "../api";
 import { useMensagens, type MensagemLocal } from "../hooks/useMensagens";
-import { hora, mesmoDia, partesTexto, quando, rotuloDia, teclaAtalho } from "../lib/util";
+import { estiloMatiz, hora, mesmoDia, partesTexto, quando, rotuloDia } from "../lib/util";
 import { Avatar } from "./ui/Avatar";
-import { Cabecalho } from "./ui/Cabecalho";
-import { Dica } from "./ui/Dica";
 
 // mensagens seguidas da mesma pessoa em até 7 min ficam no mesmo bloco
 const JANELA_GRUPO_MS = 7 * 60 * 1000;
@@ -13,10 +11,6 @@ const JANELA_GRUPO_MS = 7 * 60 * 1000;
 type Props = {
     canal: Canal;
     eu: Usuario;
-    membrosVisivel: boolean;
-    onMembros: () => void;
-    onBuscar: () => void;
-    onMenu: () => void;
 };
 
 type Item = {
@@ -28,7 +22,7 @@ type Item = {
     local?: MensagemLocal;
 };
 
-export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onMenu }: Props) {
+export function CanalTexto({ canal, eu }: Props) {
     const { estado, mensagens, pendentes, enviar, reenviar, descartar } = useMensagens(canal.id, eu);
 
     const listaRef = useRef<HTMLDivElement>(null);
@@ -92,24 +86,6 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
 
     return (
         <div className="vista">
-            <Cabecalho icone={<Hash size={20} />} titulo={canal.nome} onMenu={onMenu}>
-                <Dica texto={`Buscar (${teclaAtalho} K)`} lado="baixo">
-                    <button className="botao-icone" onClick={onBuscar} aria-label="Buscar">
-                        <Search size={19} />
-                    </button>
-                </Dica>
-                <Dica texto={membrosVisivel ? "Ocultar membros" : "Mostrar membros"} lado="baixo">
-                    <button
-                        className={`botao-icone ${membrosVisivel ? "ativo" : ""}`}
-                        onClick={onMembros}
-                        aria-pressed={membrosVisivel}
-                        aria-label="Membros"
-                    >
-                        <Users size={19} />
-                    </button>
-                </Dica>
-            </Cabecalho>
-
             <div className="chat">
                 <div className="chat-rolagem" ref={listaRef} onScroll={aoRolar}>
                     <div className="chat-conteudo">
@@ -168,7 +144,7 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
                                         <div className="mensagem-corpo">
                                             {inicioGrupo && (
                                                 <header className="mensagem-topo">
-                                                    <strong>{item.autor.nome}</strong>
+                                                    <strong className="nome-pessoa" style={estiloMatiz(item.autor.nome)}>{item.autor.nome}</strong>
                                                     <time dateTime={item.criadoEm}>{quando(data)}</time>
                                                 </header>
                                             )}

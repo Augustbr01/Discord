@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { SendHorizontal, X } from "lucide-react";
 import type { Usuario } from "../../api";
 import { useChatSala, type MensagemSala } from "../../contexto/ChatSala";
-import { hora } from "../../lib/util";
+import { estiloMatiz, hora } from "../../lib/util";
 import type { MapaMembros } from "../../tipos";
 import { Avatar } from "../ui/Avatar";
 
@@ -78,7 +78,8 @@ export function ChatAoVivo({ membros, eu, onFechar }: Props) {
                             <Avatar nome={nome} url={membro?.avatarUrl} tamanho={28} />
                             <div className="chat-sala-corpo">
                                 <span className="chat-sala-autor">
-                                    {nome} <time>{hora(primeira.timestamp)}</time>
+                                    <span className="nome-pessoa" style={estiloMatiz(nome)}>{nome}</span>
+                                    <time>{hora(primeira.timestamp)}</time>
                                 </span>
                                 {g.mensagens.map((m) => (
                                     <p key={m.id}>{m.message}</p>

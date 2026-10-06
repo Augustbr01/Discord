@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useTrackToggle } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import {
-    Headphones, HeadphoneOff, Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Video, VideoOff,
+    Headphones, HeadphoneOff, MessageSquare, Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Video, VideoOff,
 } from "lucide-react";
 import { useControleVoz } from "../../contexto/ControleVoz";
 import { useToast } from "../../contexto/Toasts";
@@ -11,8 +11,15 @@ import { estaDigitando } from "../../lib/util";
 import { Dica } from "../ui/Dica";
 import { Dispositivos } from "./Dispositivos";
 
+type Props = {
+    onSair: () => void;
+    chatAberto: boolean;
+    naoLidas: number;
+    onChat: () => void;
+};
+
 // barra de controles da chamada
-export function Controles({ onSair }: { onSair: () => void }) {
+export function Controles({ onSair, chatAberto, naoLidas, onChat }: Props) {
     const toast = useToast();
     const { micLigado, micPendente, alternarMic, surdo, alternarSurdo } = useControleVoz();
 
@@ -82,6 +89,11 @@ export function Controles({ onSair }: { onSair: () => void }) {
                     </div>
                 )}
             </div>
+
+            <Controle dica={chatAberto ? "Fechar chat da sala" : "Chat da sala"} ligado={chatAberto} onClick={onChat}>
+                <MessageSquare size={20} />
+                {naoLidas > 0 && !chatAberto && <span className="ponto-novo" />}
+            </Controle>
 
             <span className="controles-divisor" />
 

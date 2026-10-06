@@ -1,14 +1,11 @@
 import { Plus, Ticket } from "lucide-react";
-import { Cabecalho } from "./ui/Cabecalho";
 
-type Props = { onCriar: () => void; onEntrar: () => void; onMenu: () => void };
+type Props = { onCriar: () => void; onEntrar: () => void };
 
 // quando você ainda não está em nenhum servidor
-export function SemServidor({ onCriar, onEntrar, onMenu }: Props) {
+export function SemServidor({ onCriar, onEntrar }: Props) {
     return (
         <div className="vista">
-            <Cabecalho titulo="Liberdade" onMenu={onMenu} />
-
             <div className="sem-servidor">
                 <h1>Você ainda não está em nenhum servidor</h1>
                 <p>Crie um servidor pra você e sua galera, ou entre com um link de convite.</p>

@@ -30,7 +30,9 @@ function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
 
     return (
         <section className="membros-grupo">
-            <span className="rotulo">{titulo}</span>
+            <span className="rotulo">
+                {titulo} <span className="membros-contagem">{membros.length}</span>
+            </span>
             {membros.map(({ usuario }) => {
                 const sala = emChamada.get(usuario.id);
                 return (
@@ -46,8 +48,8 @@ function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
                                 )}
                             </span>
                             {sala ? (
-                                <span className="membro-status">
-                                    <Volume2 size={12} /> <span className="truncar">{sala}</span>
+                                <span className="membro-status em-chamada">
+                                    <Volume2 size={12} /> <span className="truncar">Em {sala}</span>
                                 </span>
                             ) : (
                                 usuario.id === eu.id && <span className="membro-status">Você</span>

@@ -1,9 +1,8 @@
-import { Loader2, Volume2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Canal, Usuario } from "../../api";
 import type { MapaMembros, Voz } from "../../tipos";
-import { Avatar } from "../ui/Avatar";
-import { Cabecalho } from "../ui/Cabecalho";
 import { Palco } from "./Palco";
+import { Assento, Roda } from "./Roda";
 
 type Props = {
     canal: Canal;
@@ -14,48 +13,39 @@ type Props = {
     entrando: boolean;
     onEntrar: () => void;
     onSair: () => void;
-    onMenu: () => void;
 };
 
-// tela de uma sala de voz: a chamada, se você estiver nela; senão, quem está lá e o botão de entrar
-export function VistaVoz({ canal, eu, membros, voz, pessoas, entrando, onEntrar, onSair, onMenu }: Props) {
+function quantasPessoas(n: number) {
+    if (n === 0) return "Ninguém na sala agora";
+    return n === 1 ? "1 pessoa na sala" : `${n} pessoas na sala`;
+}
+
+// tela de uma sala de voz: a chamada, se você estiver nela; senão, a roda de quem está lá e o botão de entrar
+export function VistaVoz({ canal, eu, membros, voz, pessoas, entrando, onEntrar, onSair }: Props) {
     if (voz?.canal.id === canal.id) {
-        return <Palco voz={voz} eu={eu} membros={membros} onSair={onSair} onMenu={onMenu} />;
+        return <Palco voz={voz} eu={eu} membros={membros} onSair={onSair} />;
     }
 
     return (
-        <div className="vista">
-            <Cabecalho icone={<Volume2 size={20} />} titulo={canal.nome} onMenu={onMenu} />
-
-            <div className="voz-fora">
-                <div className="voz-fora-conteudo">
-                    <span className="voz-fora-icone"><Volume2 size={28} /></span>
-                    <h2>{canal.nome}</h2>
-
-                    {pessoas.length > 0 ? (
+        <div className="voz-fora">
+                <Roda
+                    quantidade={pessoas.length}
+                    centro={
                         <>
-                            <p>Na sala agora:</p>
-                            <ul className="voz-fora-pessoas">
-                                {pessoas.map((p) => (
-                                    <li key={p.id}>
-                                        <Avatar nome={p.nome} url={p.avatarUrl} tamanho={24} />
-                                        <span className="truncar">{p.nome}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                            <h2 className="roda-titulo">{canal.nome}</h2>
+                            <p className="roda-meta">{quantasPessoas(pessoas.length)}</p>
+                            <button className="botao botao-primario botao-grande roda-entrar" onClick={onEntrar} disabled={entrando}>
+                                {entrando && <Loader2 size={18} className="girar" />}
+                                {entrando ? "Conectando…" : voz ? "Trocar de sala" : "Entrar na sala"}
+                            </button>
+                            {voz && !entrando && <small className="roda-nota">Você vai sair de {voz.canal.nome}.</small>}
                         </>
-                    ) : (
-                        <p>Ninguém na sala agora.</p>
-                    )}
-
-                    <button className="botao botao-primario botao-grande" onClick={onEntrar} disabled={entrando}>
-                        {entrando && <Loader2 size={18} className="girar" />}
-                        {entrando ? "Conectando…" : voz ? "Trocar para esta sala" : "Entrar na sala"}
-                    </button>
-
-                    {voz && !entrando && <small>Você vai sair de {voz.canal.nome}.</small>}
-                </div>
-            </div>
+                    }
+                >
+                    {pessoas.map((p, i) => (
+                        <Assento key={p.id} indice={i} nome={p.nome} url={p.avatarUrl} />
+                    ))}
+                </Roda>
         </div>
     );
 }

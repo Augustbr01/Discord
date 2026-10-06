@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
 import { DisconnectReason, ScreenSharePresets, VideoPresets, type MediaDeviceFailure, type RoomOptions } from "livekit-client";
-import { Bird, Hash, Loader2, LogOut, PhoneOff, Plus, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
+import { Bird, Building2, Hash, LayoutPanelLeft, Loader2, LogOut, PhoneOff, Plus, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
 import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
@@ -14,24 +14,27 @@ import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
 import { extrairIdConvite, lerArmazenado, salvarArmazenado } from "./lib/util";
 import type { MapaMembros, Voz } from "./tipos";
-import { BarraServidores } from "./components/BarraServidores";
+import { BarraTopo } from "./components/BarraTopo";
 import { CanalTexto } from "./components/CanalTexto";
 import { VistaVoz } from "./components/chamada/VistaVoz";
-import { ListaMembros } from "./components/ListaMembros";
 import { Login } from "./components/Login";
 import { Convidar } from "./components/modais/Convidar";
 import { NovoCanal } from "./components/modais/NovoCanal";
 import { NovoServidor, type AbaServidor } from "./components/modais/NovoServidor";
-import { PainelCanais } from "./components/PainelCanais";
 import { Paleta, type ItemPaleta } from "./components/Paleta";
+import { Praca, type AbaPraca } from "./components/Praca";
 import { SemServidor } from "./components/SemServidor";
+import { TopoServidor } from "./components/TopoServidor";
 import { IconeServidor } from "./components/ui/Avatar";
-import { Cabecalho } from "./components/ui/Cabecalho";
 
 const CHAVE_CONVITE = "convitePendente";
 const CHAVE_SERVIDOR = "liberdade:servidor";
 const CHAVE_CANAIS = "liberdade:canais";
-const CHAVE_MEMBROS = "liberdade:membros";
+const CHAVE_PRACA = "liberdade:praca";
+const CHAVE_3D = "liberdade:predio";
+
+// o prédio 3D (Three.js) só é baixado quando alguém entra nele
+const Predio = lazy(() => import("./components/predio/Predio"));
 const CHAVE_MIC = "liberdade:microfone";
 
 // qualidade da chamada: 720p com camadas menores pra conexões fracas, voz com redução de ruído
@@ -60,7 +63,11 @@ type ModalAberto =
 function guardarConviteDaUrl() {
     const id = location.pathname.startsWith("/convite/") ? extrairIdConvite(location.pathname) : null;
     if (id) {
-        sessionStorage.setItem(CHAVE_CONVITE, id);
+        try {
+            sessionStorage.setItem(CHAVE_CONVITE, id);
+        } catch {
+            // sem armazenamento: o convite só não sobrevive ao login
+        }
         history.replaceState(null, "", "/");
     }
 }
@@ -88,19 +95,20 @@ function Aplicacao() {
     const [entrandoEm, setEntrandoEm] = useState<string | null>(null);
     const [micPreferido, setMicPreferido] = useState(() => lerArmazenado(CHAVE_MIC, true));
     const [surdo, setSurdo] = useState(false);
-    // em tela estreita a lista de membros cobre o conteúdo, então sempre começa fechada
-    const [membrosVisivel, setMembrosVisivel] = useState(() => window.innerWidth >= 1100 && lerArmazenado(CHAVE_MEMBROS, true));
+    // a Praça (salas de voz e pessoas): sempre visível em tela larga; nas estreitas abre por cima
+    const [pracaAberta, setPracaAberta] = useState(false);
+    const [abaPraca, setAbaPraca] = useState<AbaPraca>(() => lerArmazenado<AbaPraca>(CHAVE_PRACA, "salas"));
     const [modal, setModal] = useState<ModalAberto>(null);
     const [paletaAberta, setPaletaAberta] = useState(false);
-    const [menuAberto, setMenuAberto] = useState(false);
+    const [modo3d, setModo3d] = useState(() => lerArmazenado(CHAVE_3D, false));
 
     useEffect(() => salvarArmazenado(CHAVE_MIC, micPreferido), [micPreferido]);
-    // só salva quando você mesmo mostra/oculta (abrir no celular não muda a escolha do computador)
-    const alternarMembros = useCallback(() => {
-        setMembrosVisivel((v) => {
-            salvarArmazenado(CHAVE_MEMBROS, !v);
-            return !v;
-        });
+    useEffect(() => salvarArmazenado(CHAVE_3D, modo3d), [modo3d]);
+    useEffect(() => salvarArmazenado(CHAVE_PRACA, abaPraca), [abaPraca]);
+
+    const abrirPraca = useCallback((aba?: AbaPraca) => {
+        if (aba) setAbaPraca(aba);
+        setPracaAberta(true);
     }, []);
 
     const tratarErro = useCallback(async (err: unknown) => {
@@ -140,8 +148,13 @@ function Aplicacao() {
         let ativo = true;
 
         (async () => {
-            const convite = sessionStorage.getItem(CHAVE_CONVITE);
-            sessionStorage.removeItem(CHAVE_CONVITE);
+            let convite: string | null = null;
+            try {
+                convite = sessionStorage.getItem(CHAVE_CONVITE);
+                sessionStorage.removeItem(CHAVE_CONVITE);
+            } catch {
+                // sem armazenamento: não tem convite guardado
+            }
 
             let abrir: string | null = null;
             if (convite) {
@@ -206,7 +219,7 @@ function Aplicacao() {
 
     const irParaServidor = useCallback((id: string) => {
         setServidorId(id);
-        setMenuAberto(false);
+        setPracaAberta(false);
         salvarArmazenado(CHAVE_SERVIDOR, id);
     }, []);
 
@@ -215,7 +228,7 @@ function Aplicacao() {
         if (canal.tipo === "TEXTO") {
             salvarArmazenado(CHAVE_CANAIS, { ...lerArmazenado<Record<string, string>>(CHAVE_CANAIS, {}), [idServidor]: canal.id });
         }
-        setMenuAberto(false);
+        setPracaAberta(false);
     }, []);
 
     // ---------- chamada ----------
@@ -247,8 +260,10 @@ function Aplicacao() {
         // o gateway avisa os outros que você saiu (SAIU_DA_CALL)
     }, []);
 
+    // a ilha leva pro palco da chamada (no prédio, sai pra vista normal, onde estão vídeo e tela)
     function abrirChamada() {
         if (!voz) return;
+        setModo3d(false);
         irParaServidor(voz.servidorId);
         selecionarCanal(voz.servidorId, voz.canal);
     }
@@ -368,16 +383,24 @@ function Aplicacao() {
     );
     if (servidor) {
         itensPaleta.push({
-            id: "membros",
+            id: "pessoas",
             grupo: "Ações",
-            titulo: membrosVisivel ? "Ocultar membros" : "Mostrar membros",
+            titulo: "Ver pessoas do servidor",
+            dica: servidor.nome,
             icone: <Users size={16} />,
-            acao: alternarMembros,
+            acao: () => abrirPraca("pessoas"),
         });
     }
     if (voz) {
         itensPaleta.push({ id: "sair-sala", grupo: "Ações", titulo: "Sair da sala de voz", dica: voz.canal.nome, icone: <PhoneOff size={16} />, acao: sairDaVoz });
     }
+    itensPaleta.push({
+        id: "predio",
+        grupo: "Ações",
+        titulo: modo3d ? "Voltar pra vista normal" : "Andar pelo prédio em 3D",
+        icone: modo3d ? <LayoutPanelLeft size={16} /> : <Building2 size={16} />,
+        acao: () => setModo3d((v) => !v),
+    });
     itensPaleta.push({ id: "sair-conta", grupo: "Ações", titulo: "Sair da conta", icone: <LogOut size={16} />, acao: sairDaConta });
 
     // ---------- telas ----------
@@ -395,40 +418,27 @@ function Aplicacao() {
         return <Login />;
     }
 
-    const abrirMenu = () => setMenuAberto(true);
     let conteudo: ReactNode;
 
     if (servidores === null || (servidorId && !servidor)) {
-        conteudo = <VistaCarregando onMenu={abrirMenu} />;
+        conteudo = <VistaCarregando />;
     } else if (servidores.length === 0) {
         conteudo = (
             <SemServidor
                 onCriar={() => setModal({ tipo: "servidor", aba: "criar" })}
                 onEntrar={() => setModal({ tipo: "servidor", aba: "entrar" })}
-                onMenu={abrirMenu}
             />
         );
     } else if (!servidor || !canalAtual) {
         conteudo = (
             <SemCanais
-                nome={servidor?.nome ?? ""}
                 souAdmin={souAdmin}
+                temSalas={!!servidor?.canais.length}
                 onCriar={() => setModal({ tipo: "canal", tipoCanal: "TEXTO" })}
-                onMenu={abrirMenu}
             />
         );
     } else if (canalAtual.tipo === "TEXTO") {
-        conteudo = (
-            <CanalTexto
-                key={canalAtual.id}
-                canal={canalAtual}
-                eu={eu}
-                membrosVisivel={membrosVisivel}
-                onMembros={alternarMembros}
-                onBuscar={() => setPaletaAberta(true)}
-                onMenu={abrirMenu}
-            />
-        );
+        conteudo = <CanalTexto key={canalAtual.id} canal={canalAtual} eu={eu} />;
     } else {
         conteudo = (
             <VistaVoz
@@ -440,12 +450,13 @@ function Aplicacao() {
                 entrando={entrandoEm === canalAtual.id}
                 onEntrar={() => entrarNaVoz(canalAtual)}
                 onSair={sairDaVoz}
-                onMenu={abrirMenu}
             />
         );
     }
 
-    const mostrarMembros = !!servidor && membrosVisivel && canalAtual?.tipo === "TEXTO";
+    const noPalco = !!voz && canalAtual?.id === voz.canal.id;
+    // o prédio precisa de pelo menos um servidor (um andar)
+    const noPredio = modo3d && !!servidores && servidores.length > 0;
 
     return (
         // a sala de voz fica em volta de tudo: a chamada continua enquanto você navega.
@@ -459,49 +470,91 @@ function Aplicacao() {
             audio={micPreferido && !surdo}
             video={false}
             options={OPCOES_SALA}
-            className={`app ${menuAberto ? "menu-aberto" : ""} ${mostrarMembros ? "com-membros" : ""}`}
+            className={`app ${servidor ? "" : "sem-praca"} ${pracaAberta ? "praca-aberta" : ""} ${voz ? "em-chamada" : ""} ${noPredio ? "modo-3d" : ""}`}
             onDisconnected={aoDesconectar}
             onError={aoErroNaSala}
             onMediaDeviceFailure={aoFalharDispositivo}
         >
             <ControleVozProvider micPreferido={micPreferido} setMicPreferido={setMicPreferido} surdo={surdo} setSurdo={setSurdo}>
                 <ChatSalaProvider desde={voz?.desde ?? null}>
-                    <div className="navegacao">
-                        <BarraServidores
-                            servidores={servidores ?? []}
-                            atualId={servidorId}
-                            servidorDaChamada={voz?.servidorId ?? null}
-                            onEscolher={irParaServidor}
-                            onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
-                        />
-                        <PainelCanais
-                            servidor={servidor}
-                            carregando={servidores === null || (!!servidorId && !servidor)}
-                            canalAtualId={canalAtual?.id ?? null}
-                            voz={voz}
-                            entrandoEm={entrandoEm}
-                            eu={eu}
-                            souAdmin={souAdmin}
-                            membros={membros}
-                            onCanal={abrirCanal}
-                            onApagarCanal={apagarCanal}
-                            onConvidar={() => setModal({ tipo: "convidar" })}
-                            onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
-                            onAbrirChamada={abrirChamada}
-                            onSairChamada={sairDaVoz}
-                            onSairConta={sairDaConta}
-                        />
-                    </div>
+                    <BarraTopo
+                        servidores={servidores ?? []}
+                        carregando={servidores === null}
+                        atualId={servidorId}
+                        eu={eu}
+                        voz={voz}
+                        membros={membros}
+                        noPalco={noPalco}
+                        modo3d={noPredio}
+                        onAlternar3D={() => setModo3d((v) => !v)}
+                        onEscolher={irParaServidor}
+                        onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
+                        onBuscar={() => setPaletaAberta(true)}
+                        onAbrirChamada={abrirChamada}
+                        onSairChamada={sairDaVoz}
+                        onSairConta={sairDaConta}
+                    />
 
-                    {menuAberto && <div className="fundo-escuro" onClick={() => setMenuAberto(false)} />}
+                    {noPredio ? (
+                        <Suspense
+                            fallback={
+                                <div className="predio predio-carregando">
+                                    <Loader2 size={20} className="girar" /> Abrindo o prédio…
+                                </div>
+                            }
+                        >
+                            <Predio
+                                servidores={servidores ?? []}
+                                servidor={servidor}
+                                eu={eu}
+                                voz={voz}
+                                membros={membros}
+                                onTrocarAndar={irParaServidor}
+                                onEntrarSala={entrarNaVoz}
+                                onSairSala={sairDaVoz}
+                                onSair3D={() => setModo3d(false)}
+                            />
+                        </Suspense>
+                    ) : (
+                    <>
+                    <main className="folha">
+                        {servidor && (
+                            <TopoServidor
+                                servidor={servidor}
+                                canalAtual={canalAtual}
+                                souAdmin={souAdmin}
+                                emChamada={emChamada.size}
+                                onCanal={abrirCanal}
+                                onApagarCanal={apagarCanal}
+                                onConvidar={() => setModal({ tipo: "convidar" })}
+                                onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
+                                onAbrirPraca={() => abrirPraca("salas")}
+                            />
+                        )}
+                        <div className="folha-conteudo">{conteudo}</div>
+                    </main>
 
-                    <main className="principal">{conteudo}</main>
-
-                    {mostrarMembros && servidor && (
+                    {servidor && (
                         <>
-                            <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
-                            <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
+                            <div className="fundo-escuro" onClick={() => setPracaAberta(false)} />
+                            <Praca
+                                servidor={servidor}
+                                eu={eu}
+                                voz={voz}
+                                membros={membros}
+                                entrandoEm={entrandoEm}
+                                souAdmin={souAdmin}
+                                emChamada={emChamada}
+                                aba={abaPraca}
+                                onAba={setAbaPraca}
+                                onCanal={abrirCanal}
+                                onApagarCanal={apagarCanal}
+                                onNovaSala={() => setModal({ tipo: "canal", tipoCanal: "VOZ" })}
+                                onFechar={() => setPracaAberta(false)}
+                            />
                         </>
+                    )}
+                    </>
                     )}
 
                     {modal?.tipo === "servidor" && (
@@ -525,34 +578,29 @@ function Aplicacao() {
     );
 }
 
-function VistaCarregando({ onMenu }: { onMenu: () => void }) {
+function VistaCarregando() {
     return (
-        <div className="vista">
-            <Cabecalho titulo="" onMenu={onMenu} />
-            <div className="vista-centro">
-                <Loader2 size={22} className="girar texto-fraco" />
-            </div>
+        <div className="vista vista-centro">
+            <Loader2 size={22} className="girar texto-fraco" />
         </div>
     );
 }
 
-type SemCanaisProps = { nome: string; souAdmin: boolean; onCriar: () => void; onMenu: () => void };
+type SemCanaisProps = { souAdmin: boolean; temSalas: boolean; onCriar: () => void };
 
-function SemCanais({ nome, souAdmin, onCriar, onMenu }: SemCanaisProps) {
+function SemCanais({ souAdmin, temSalas, onCriar }: SemCanaisProps) {
     return (
-        <div className="vista">
-            <Cabecalho titulo={nome} onMenu={onMenu} />
-            <div className="vista-centro">
-                <div className="estado-vazio">
-                    <strong>Este servidor ainda não tem canais</strong>
-                    {souAdmin ? (
-                        <button className="botao botao-primario" onClick={onCriar}>
-                            <Plus size={16} /> Criar canal
-                        </button>
-                    ) : (
-                        <span>Quando um admin criar um canal, ele aparece aqui.</span>
-                    )}
-                </div>
+        <div className="vista vista-centro">
+            <div className="estado-vazio">
+                <strong>{temSalas ? "Nenhum canal de texto ainda" : "Este servidor ainda não tem canais"}</strong>
+                {temSalas && <span>As salas de voz estão na Praça, ao lado.</span>}
+                {souAdmin ? (
+                    <button className="botao botao-primario" onClick={onCriar}>
+                        <Plus size={16} /> Criar canal de texto
+                    </button>
+                ) : (
+                    <span>Quando um admin criar um canal, ele aparece aqui.</span>
+                )}
             </div>
         </div>
     );

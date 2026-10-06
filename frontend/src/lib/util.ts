@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 // FNV-1a: transforma um texto num número estável (o mesmo texto sempre dá o mesmo número)
 export function hash(texto: string) {
     let h = 2166136261;
@@ -8,11 +10,17 @@ export function hash(texto: string) {
     return h >>> 0;
 }
 
-// tons de cinza pros avatares sem foto: neutros, só pra diferenciar uma pessoa da outra
-const TONS = ["#2a2a2f", "#303036", "#36363c", "#3d3d44"];
+// matizes (OKLCH) das pessoas: cada nome cai sempre no mesmo tom, usado no avatar e no nome.
+// Pulam a faixa da manga (~75°), que é a cor de "você / agora", e a do petróleo do fundo.
+const MATIZES = [5, 40, 105, 145, 175, 240, 280, 325];
 
-export function tomNeutro(texto: string) {
-    return TONS[hash(texto) % TONS.length];
+export function matiz(texto: string) {
+    return MATIZES[hash(texto) % MATIZES.length];
+}
+
+// estilo que liga um elemento ao tom da pessoa (lido no CSS como var(--h))
+export function estiloMatiz(texto: string) {
+    return { "--h": matiz(texto) } as CSSProperties;
 }
 
 export function iniciais(nome: string) {
@@ -22,7 +30,7 @@ export function iniciais(nome: string) {
     return (partes[0][0] + partes[1][0]).toUpperCase();
 }
 
-// os avatares padrão do Discord são coloridos; esses viram iniciais em cinza
+// os avatares padrão do Discord não dizem nada sobre a pessoa; esses viram iniciais no tom dela
 export function avatarReal(url: string | null | undefined) {
     if (!url) return null;
     return /cdn\.discordapp\.com\/embed\/avatars\//.test(url) ? null : url;

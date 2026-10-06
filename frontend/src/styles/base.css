@@ -1,37 +1,59 @@
 /* =========================================================
-   Base: cores, tipografia, botões, campos e peças comuns
-   Tema escuro neutro (preto, cinzas e branco)
+   Base: tokens, tipografia, botões, campos e peças comuns
+
+   O mundo do Liberdade: a casca (fundo azul-petróleo) é o lugar,
+   a folha (área central) é a conversa. Manga marca "você / agora":
+   ação principal, seleção, voz conectada e quem está falando.
+   Cada pessoa ganha um tom próprio (nome e avatar), como nos grupos.
    ========================================================= */
 
 :root {
-    /* fundos, do mais escuro ao mais claro */
-    --fundo-0: #09090b;
-    --fundo-1: #0f0f11;
-    --fundo-2: #131315;
-    --fundo-3: #19191c;
-    --fundo-4: #222226;
-    --hover: rgba(255, 255, 255, 0.045);
-    --ativo: rgba(255, 255, 255, 0.08);
+    /* casca: rail, canais e membros */
+    --casca: #012329;
+    --casca-2: #082d34;
+    --casca-3: #0f363e;
+    --casca-funda: #00191e;
+    --linha-casca: #1a3b41;
 
-    /* bordas */
-    --borda: #1d1d21;
-    --borda-2: #27272b;
-    --borda-3: #3a3a40;
+    /* folha: a área da conversa e tudo que flutua sobre ela */
+    --folha: #1a292d;
+    --folha-2: #213236;
+    --folha-3: #283c40;
+    --linha: #2b4045;
+    --linha-2: #3a5257;
 
-    /* texto */
-    --texto: #ededef;
-    --texto-2: #b4b4bb;
-    --texto-3: #85858e;
-    --texto-4: #5c5c64;
+    /* texto (osso sobre petróleo) */
+    --texto: #f4f0e7;
+    --texto-2: #b6c8cb;
+    --texto-3: #8da3a7;
+    --texto-4: #617a7e; /* só decoração e desativado */
 
-    /* único uso de cor: estados de erro, mudo e sair */
-    --perigo: #e5484d;
-    --perigo-suave: rgba(229, 72, 77, 0.14);
+    /* manga: você, agora, ação principal */
+    --manga: #ffb846;
+    --manga-2: #ffcf6c;
+    --manga-suave: rgba(255, 184, 70, 0.14);
+    --manga-borda: rgba(255, 184, 70, 0.45);
+    --tinta: #331b06; /* texto sobre manga */
 
-    --sombra: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.3);
-    --sombra-forte: 0 24px 64px -12px rgba(0, 0, 0, 0.8);
+    /* acerola: sair, mudo, apagar, erro */
+    --acerola: #f46e6f;
+    --acerola-2: #ff8482;
+    --acerola-suave: rgba(244, 110, 111, 0.15);
+    --tinta-acerola: #3a0b0d;
 
-    --fonte: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* menta: deu certo */
+    --menta: #70ddb1;
+
+    --raio: 10px;
+    --raio-grande: 16px;
+    --raio-folha: 18px;
+
+    --sombra-flutuante: 0 18px 44px -14px rgba(0, 12, 16, 0.75), 0 2px 8px rgba(0, 12, 16, 0.35);
+
+    --curva: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --fonte: "Onest Variable", "Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --fonte-titulo: "Bricolage Grotesque Variable", "Onest Variable", system-ui, sans-serif;
 
     color-scheme: dark;
 }
@@ -50,12 +72,11 @@ body,
 }
 
 body {
-    background: var(--fundo-0);
+    background: var(--casca);
     color: var(--texto);
     font-family: var(--fonte);
     font-size: 14px;
     line-height: 1.45;
-    font-feature-settings: "cv11", "ss03";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
@@ -88,6 +109,15 @@ ul {
     margin: 0;
 }
 
+h1,
+h2,
+h3 {
+    font-family: var(--fonte-titulo);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+}
+
 ul {
     padding: 0;
     list-style: none;
@@ -98,17 +128,23 @@ a {
 }
 
 ::selection {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 184, 70, 0.32);
+    color: var(--texto);
 }
 
 :focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline: 2px solid var(--manga);
     outline-offset: 2px;
+}
+
+input,
+textarea {
+    caret-color: var(--manga);
 }
 
 * {
     scrollbar-width: thin;
-    scrollbar-color: #2c2c31 transparent;
+    scrollbar-color: var(--linha-2) transparent;
 }
 
 /* ---------- utilitários ---------- */
@@ -120,11 +156,10 @@ a {
     white-space: nowrap;
 }
 
+/* rótulo de grupo: frase normal, discreto (nada de caixa alta) */
 .rotulo {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    font-size: 12.5px;
+    font-weight: 550;
     color: var(--texto-3);
 }
 
@@ -133,18 +168,24 @@ a {
 }
 
 .texto-erro {
-    color: var(--perigo);
+    color: var(--acerola);
     font-size: 13px;
 }
 
 kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 6px;
+    border: 1px solid var(--linha-2);
+    border-bottom-width: 2px;
+    background: var(--folha);
     font-family: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 6px;
-    border-radius: 5px;
-    border: 1px solid var(--borda-3);
-    color: var(--texto-3);
+    font-size: 11.5px;
+    font-weight: 550;
+    color: var(--texto-2);
 }
 
 /* ---------- botões ---------- */
@@ -156,25 +197,29 @@ kbd {
     gap: 8px;
     height: 38px;
     padding: 0 16px;
-    border-radius: 8px;
+    border-radius: var(--raio);
     font-size: 14px;
     font-weight: 600;
     white-space: nowrap;
     text-decoration: none;
-    transition: background 0.15s, color 0.15s, opacity 0.15s;
+    transition: background-color 0.15s, color 0.15s, scale 0.1s;
+}
+
+.botao:active:not(:disabled) {
+    scale: 0.98;
 }
 
 .botao:disabled {
-    opacity: 0.45;
+    opacity: 0.5;
 }
 
 .botao-primario {
-    background: var(--texto);
-    color: var(--fundo-0);
+    background: var(--manga);
+    color: var(--tinta);
 }
 
 .botao-primario:hover:not(:disabled) {
-    background: #d4d4d8;
+    background: var(--manga-2);
 }
 
 .botao-fantasma {
@@ -182,21 +227,22 @@ kbd {
 }
 
 .botao-fantasma:hover:not(:disabled) {
-    background: var(--hover);
+    background: var(--folha-3);
     color: var(--texto);
 }
 
 .botao-grande {
-    height: 44px;
-    padding: 0 20px;
+    height: 46px;
+    padding: 0 22px;
+    border-radius: 12px;
     font-size: 15px;
 }
 
 .botao-pequeno {
     height: 32px;
     padding: 0 12px;
+    border-radius: 8px;
     font-size: 13px;
-    border-radius: 6px;
 }
 
 .botao-largo {
@@ -207,43 +253,43 @@ kbd {
     position: relative;
     display: inline-grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
     flex-shrink: 0;
-    border-radius: 6px;
-    color: var(--texto-2);
-    transition: background 0.12s, color 0.12s;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    color: var(--texto-3);
+    transition: background-color 0.15s, color 0.15s;
 }
 
 .botao-icone:hover:not(:disabled) {
-    background: var(--hover);
+    background: var(--folha-3);
     color: var(--texto);
 }
 
 .botao-icone.ativo {
-    background: var(--ativo);
-    color: var(--texto);
+    background: var(--manga-suave);
+    color: var(--manga);
 }
 
 .botao-icone:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
 }
 
 .botao-icone-mini {
-    width: 22px;
-    height: 22px;
-    border-radius: 5px;
-    color: var(--texto-3);
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
 }
 
 .botao-icone-desligado,
 .botao-icone-desligado:hover:not(:disabled) {
-    color: var(--perigo);
+    background: var(--acerola-suave);
+    color: var(--acerola);
 }
 
 .botao-icone-perigo:hover:not(:disabled) {
-    background: var(--perigo-suave);
-    color: var(--perigo);
+    background: var(--acerola-suave);
+    color: var(--acerola);
 }
 
 /* ---------- campos ---------- */
@@ -254,14 +300,17 @@ kbd {
     gap: 8px;
 }
 
+.campo-rotulado > .rotulo {
+    color: var(--texto-2);
+}
+
 .campo {
     width: 100%;
-    height: 40px;
+    height: 42px;
     padding: 0 12px;
-    border-radius: 8px;
-    background: var(--fundo-0);
-    border: 1px solid var(--borda-2);
-    color: var(--texto);
+    border-radius: var(--raio);
+    border: 1px solid var(--linha);
+    background: var(--casca-funda);
     font-size: 14.5px;
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s;
@@ -269,19 +318,19 @@ kbd {
 
 .campo::placeholder,
 .campo input::placeholder {
-    color: var(--texto-4);
+    color: var(--texto-3);
 }
 
 .campo:focus,
 .campo:focus-within {
-    border-color: var(--borda-3);
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+    border-color: var(--manga-borda);
+    box-shadow: 0 0 0 3px var(--manga-suave);
 }
 
 .campo-com-icone {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     color: var(--texto-3);
 }
 
@@ -301,44 +350,56 @@ select.campo {
 
 /* ---------- avatares ---------- */
 
+/* --h (matiz) vem do nome da pessoa: o mesmo nome sempre tem o mesmo tom */
 .avatar {
     position: relative;
     display: inline-grid;
-    place-items: center;
     flex-shrink: 0;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    font-weight: 600;
-    line-height: 1;
-    transition: box-shadow 0.15s;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    transition: box-shadow 0.15s, scale 0.25s var(--curva);
 }
 
 .avatar img,
 .avatar-iniciais {
+    grid-area: 1 / 1;
     width: 100%;
     height: 100%;
     border-radius: 50%;
     object-fit: cover;
+}
+
+.avatar-iniciais {
     display: grid;
     place-items: center;
-    color: #d6d6db;
+    background: oklch(0.46 0.09 var(--h, 210));
+    color: var(--texto);
     user-select: none;
 }
 
 .avatar.falando {
-    box-shadow: 0 0 0 2px var(--texto);
+    box-shadow: 0 0 0 2px var(--casca), 0 0 0 4px var(--manga);
+}
+
+/* nome com o tom da pessoa */
+.nome-pessoa {
+    color: oklch(0.84 0.095 var(--h, 210));
 }
 
 .icone-servidor {
-    display: inline-grid;
+    display: grid;
     place-items: center;
     flex-shrink: 0;
     overflow: hidden;
-    background: var(--fundo-3);
-    border: 1px solid var(--borda-2);
-    color: var(--texto-2);
-    font-weight: 600;
+    background: oklch(0.42 0.08 var(--h, 210));
+    color: var(--texto);
+    font-family: var(--fonte-titulo);
+    font-weight: 700;
     letter-spacing: -0.01em;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, border-radius 0.15s;
+    user-select: none;
 }
 
 .icone-servidor img {
@@ -356,32 +417,33 @@ select.campo {
 .dica {
     position: fixed;
     z-index: 200;
+    max-width: 260px;
     padding: 6px 10px;
-    border-radius: 6px;
-    background: #050506;
-    border: 1px solid var(--borda-2);
+    border-radius: 8px;
+    background: var(--casca-funda);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra-flutuante);
+    font-size: 12.5px;
+    font-weight: 550;
     color: var(--texto);
-    font-size: 13px;
-    font-weight: 500;
     white-space: nowrap;
     pointer-events: none;
-    box-shadow: var(--sombra);
-    animation: aparecer 0.12s ease;
+    animation: aparecer 0.12s ease-out;
 }
 
 .dica-cima {
-    transform: translate(-50%, -100%);
+    translate: -50% -100%;
 }
 
 .dica-baixo {
-    transform: translate(-50%, 0);
+    translate: -50% 0;
 }
 
 .dica-direita {
-    transform: translate(0, -50%);
+    translate: 0 -50%;
 }
 
-/* ---------- menus e popovers ---------- */
+/* ---------- menus ---------- */
 
 .menu-ancora {
     position: relative;
@@ -389,14 +451,14 @@ select.campo {
 
 .menu {
     position: absolute;
-    z-index: 50;
+    z-index: 70;
     min-width: 220px;
     padding: 6px;
-    border-radius: 10px;
-    background: var(--fundo-3);
-    border: 1px solid var(--borda-2);
-    box-shadow: var(--sombra);
-    animation: surgir 0.14s ease;
+    border-radius: 14px;
+    background: var(--folha-2);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra-flutuante);
+    animation: surgir 0.16s var(--curva);
 }
 
 .menu-item {
@@ -405,37 +467,62 @@ select.campo {
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-    padding: 8px 10px;
-    border-radius: 6px;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 9px;
     font-size: 14px;
+    font-weight: 500;
     color: var(--texto-2);
     text-align: left;
 }
 
-.menu-item:hover {
-    background: var(--fundo-4);
+.menu-item svg {
+    color: var(--texto-3);
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+    background: var(--folha-3);
     color: var(--texto);
+}
+
+.menu-item:hover svg {
+    color: var(--manga);
+}
+
+.menu-item-perigo,
+.menu-item-perigo svg {
+    color: var(--acerola);
+}
+
+.menu-item-perigo:hover,
+.menu-item-perigo:hover svg {
+    background: var(--acerola-suave);
+    color: var(--acerola-2);
 }
 
 .menu-separador {
     display: block;
     height: 1px;
     margin: 6px 4px;
-    background: var(--borda-2);
+    background: var(--linha);
 }
 
-/* ---------- avisos (toasts) ---------- */
+/* ---------- toasts ---------- */
 
+/* acima do compositor e dos controles da chamada, pra não cobrir onde você está digitando */
 .toasts {
     position: fixed;
     left: 50%;
-    bottom: 20px;
+    bottom: 104px;
     translate: -50% 0;
-    z-index: 150;
+    z-index: 300;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    width: max-content;
+    max-width: calc(100vw - 32px);
     pointer-events: none;
 }
 
@@ -443,14 +530,15 @@ select.campo {
     display: flex;
     align-items: center;
     gap: 10px;
-    max-width: min(420px, calc(100vw - 32px));
-    padding: 10px 14px;
-    border-radius: 10px;
-    background: var(--fundo-3);
-    border: 1px solid var(--borda-2);
-    box-shadow: var(--sombra);
+    padding: 11px 16px 11px 12px;
+    border-radius: 14px;
+    background: var(--folha-2);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra-flutuante);
     font-size: 14px;
-    animation: surgir 0.2s ease;
+    font-weight: 500;
+    pointer-events: auto;
+    animation: surgir-baixo 0.22s var(--curva);
 }
 
 .toast svg {
@@ -458,75 +546,26 @@ select.campo {
 }
 
 .toast-sucesso svg {
-    color: var(--texto);
+    color: var(--menta);
 }
 
 .toast-erro svg {
-    color: var(--perigo);
+    color: var(--acerola);
 }
 
 .toast-info svg {
-    color: var(--texto-3);
+    color: var(--manga);
 }
 
-/* ---------- diálogos ---------- */
-
-.dialogo-fundo {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    display: grid;
-    place-items: center;
-    padding: 16px;
-    background: rgba(0, 0, 0, 0.62);
-    animation: aparecer 0.15s ease;
-}
-
-.dialogo {
-    width: 100%;
-    max-height: calc(100dvh - 32px);
-    overflow-y: auto;
-    padding: 20px;
-    border-radius: 12px;
-    background: var(--fundo-2);
-    border: 1px solid var(--borda-2);
-    box-shadow: var(--sombra-forte);
-    animation: surgir 0.18s ease;
-}
-
-.dialogo-topo {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 18px;
-}
-
-.dialogo-topo h2 {
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-}
-
-.dialogo-topo p {
-    margin-top: 4px;
-    font-size: 14px;
-    color: var(--texto-3);
-}
-
-.dialogo-topo .botao-icone {
-    margin: -4px -6px 0 0;
-}
-
-/* ---------- carregando ---------- */
+/* ---------- carregamento ---------- */
 
 .esqueleto {
     display: block;
     height: 12px;
     border-radius: 6px;
-    background: linear-gradient(90deg, #1b1b1f 0%, #242428 50%, #1b1b1f 100%);
-    background-size: 200% 100%;
-    animation: brilho 1.4s ease-in-out infinite;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 300% 100%;
+    animation: brilho 1.6s ease-in-out infinite;
 }
 
 .girar {
@@ -534,23 +573,27 @@ select.campo {
 }
 
 .tela-carregando {
-    height: 100dvh;
     display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 16px;
-    color: var(--texto-3);
+    place-items: center;
+    align-content: center;
+    gap: 18px;
+    height: 100dvh;
+    color: var(--manga);
 }
 
 .tela-carregando svg:first-child {
-    color: var(--texto);
+    animation: respirar 1.6s ease-in-out infinite;
+}
+
+.tela-carregando svg:last-child {
+    color: var(--texto-3);
 }
 
 /* ---------- animações ---------- */
 
 @keyframes girar {
     to {
-        transform: rotate(360deg);
+        rotate: 1turn;
     }
 }
 
@@ -559,7 +602,7 @@ select.campo {
         background-position: 100% 0;
     }
     to {
-        background-position: -100% 0;
+        background-position: -50% 0;
     }
 }
 
@@ -572,13 +615,22 @@ select.campo {
 @keyframes surgir {
     from {
         opacity: 0;
-        transform: translateY(4px);
+        translate: 0 -4px;
+        scale: 0.98;
     }
 }
 
-@keyframes piscar {
+@keyframes surgir-baixo {
+    from {
+        opacity: 0;
+        translate: 0 8px;
+    }
+}
+
+@keyframes respirar {
     50% {
-        opacity: 0.35;
+        scale: 1.08;
+        opacity: 0.75;
     }
 }
 

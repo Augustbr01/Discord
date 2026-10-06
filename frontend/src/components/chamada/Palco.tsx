@@ -1,24 +1,27 @@
 import { useState, type CSSProperties } from "react";
-import { StartAudio, useConnectionState, useTracks, type TrackReferenceOrPlaceholder } from "@livekit/components-react";
+import {
+    StartAudio, isTrackReference, useConnectionState, useParticipants, useTracks,
+    type TrackReferenceOrPlaceholder,
+} from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
-import { Loader2, MessageSquare, Volume2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Usuario } from "../../api";
 import { useChatSala } from "../../contexto/ChatSala";
+import { useControleVoz } from "../../contexto/ControleVoz";
 import { useAgora } from "../../hooks/useAgora";
 import { cronometro } from "../../lib/util";
 import type { MapaMembros, Voz } from "../../tipos";
-import { Cabecalho } from "../ui/Cabecalho";
-import { Dica } from "../ui/Dica";
+import { AssentoAoVivo } from "./AoVivo";
 import { Bloco } from "./Bloco";
 import { ChatAoVivo } from "./ChatAoVivo";
 import { Controles } from "./Controles";
+import { Roda } from "./Roda";
 
 type Props = {
     voz: Voz;
     eu: Usuario;
     membros: MapaMembros;
     onSair: () => void;
-    onMenu: () => void;
 };
 
 const chave = (t: TrackReferenceOrPlaceholder) => `${t.participant.identity}:${t.source}`;
@@ -31,11 +34,10 @@ function colunasPara(n: number) {
     return 4;
 }
 
-export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
+export function Palco({ voz, eu, membros, onSair }: Props) {
     const estado = useConnectionState();
     const { naoLidas } = useChatSala();
     const [chatAberto, setChatAberto] = useState(false);
-    const agora = useAgora();
 
     // uma câmera por pessoa (placeholder quando está desligada) + as telas compartilhadas
     const tracks = useTracks(
@@ -55,63 +57,77 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
     const estiloGrade = { "--colunas": colunas, "--linhas": linhas } as CSSProperties;
 
     const conectado = estado === ConnectionState.Connected;
+    // ninguém com câmera nem tela: a chamada vira a roda (só avatares, quem fala se destaca)
+    const algumVideo = telas.length > 0 || cameras.some((t) => isTrackReference(t) && !t.publication.isMuted);
 
     return (
-        <div className="vista">
-            <Cabecalho
-                icone={<Volume2 size={20} />}
-                titulo={voz.canal.nome}
-                descricao={conectado ? cronometro(agora - voz.desde) : "Conectando…"}
-                onMenu={onMenu}
-            >
-                <Dica texto={chatAberto ? "Fechar chat" : "Chat da sala"} lado="baixo">
-                    <button
-                        className={`botao-icone ${chatAberto ? "ativo" : ""}`}
-                        onClick={() => setChatAberto((v) => !v)}
-                        aria-pressed={chatAberto}
-                        aria-label="Chat da sala"
-                    >
-                        <MessageSquare size={19} />
-                        {naoLidas > 0 && !chatAberto && <span className="ponto-novo" />}
-                    </button>
-                </Dica>
-            </Cabecalho>
+        <div className="palco">
+            <div className="palco-cena">
+                {/* na roda o próprio centro já diz "Conectando…" */}
+                {!conectado && algumVideo && (
+                    <div className="palco-aviso">
+                        <Loader2 size={15} className="girar" />
+                        {estado === ConnectionState.Reconnecting ? "Reconectando…" : "Conectando à sala…"}
+                    </div>
+                )}
 
-            <div className="palco">
-                <div className="palco-cena">
-                    {!conectado && (
-                        <div className="palco-aviso">
-                            <Loader2 size={15} className="girar" />
-                            {estado === ConnectionState.Reconnecting ? "Reconectando…" : "Conectando à sala…"}
+                {!algumVideo ? (
+                    <RodaAoVivo voz={voz} conectado={conectado} membros={membros} eu={eu} />
+                ) : foco ? (
+                    <div className="cena-foco">
+                        <div className="cena-foco-principal">
+                            <Bloco trackRef={foco} membros={membros} eu={eu} />
                         </div>
-                    )}
-
-                    {foco ? (
-                        <div className="cena-foco">
-                            <div className="cena-foco-principal">
-                                <Bloco trackRef={foco} membros={membros} eu={eu} />
-                            </div>
-                            <div className="cena-faixa">
-                                {[...telas.slice(1), ...cameras].map((t) => (
-                                    <Bloco key={chave(t)} trackRef={t} membros={membros} eu={eu} />
-                                ))}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="cena-grade" style={estiloGrade} data-pessoas={cameras.length}>
-                            {cameras.map((t) => (
+                        <div className="cena-faixa">
+                            {[...telas.slice(1), ...cameras].map((t) => (
                                 <Bloco key={chave(t)} trackRef={t} membros={membros} eu={eu} />
                             ))}
                         </div>
-                    )}
+                    </div>
+                ) : (
+                    <div className="cena-grade" style={estiloGrade} data-pessoas={cameras.length}>
+                        {cameras.map((t) => (
+                            <Bloco key={chave(t)} trackRef={t} membros={membros} eu={eu} />
+                        ))}
+                    </div>
+                )}
 
-                    <StartAudio label="Clique para ativar o som da sala" className="ativar-audio" />
+                <StartAudio label="Clique para ativar o som da sala" className="ativar-audio" />
 
-                    <Controles onSair={onSair} />
-                </div>
-
-                {chatAberto && <ChatAoVivo membros={membros} eu={eu} onFechar={() => setChatAberto(false)} />}
+                <Controles
+                    onSair={onSair}
+                    chatAberto={chatAberto}
+                    naoLidas={naoLidas}
+                    onChat={() => setChatAberto((v) => !v)}
+                />
             </div>
+
+            {chatAberto && <ChatAoVivo membros={membros} eu={eu} onFechar={() => setChatAberto(false)} />}
+        </div>
+    );
+}
+
+// a roda com quem está conectado agora, direto do LiveKit
+function RodaAoVivo({ voz, conectado, membros, eu }: { voz: Voz; conectado: boolean; membros: MapaMembros; eu: Usuario }) {
+    const participantes = useParticipants();
+    const { surdo } = useControleVoz();
+    const agora = useAgora();
+
+    return (
+        <div className="cena-roda">
+            <Roda
+                quantidade={participantes.length}
+                centro={
+                    <>
+                        <h2 className="roda-titulo">{voz.canal.nome}</h2>
+                        <p className="roda-meta numeros">{conectado ? cronometro(agora - voz.desde) : "Conectando…"}</p>
+                    </>
+                }
+            >
+                {participantes.map((p, i) => (
+                    <AssentoAoVivo key={p.identity} indice={i} participante={p} membros={membros} eu={eu} surdo={p.isLocal && surdo} />
+                ))}
+            </Roda>
         </div>
     );
 }

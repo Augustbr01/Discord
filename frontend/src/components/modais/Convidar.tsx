@@ -19,7 +19,9 @@ export function Convidar({ servidor, onFechar }: { servidor: ServidorDetalhe; on
     const [gerando, setGerando] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
 
-    const link = convite ? `${location.origin}/convite/${convite.id}` : "";
+    // numa página embutida isolada a origem vale "null": aí o link fica só com o caminho
+    const origem = location.origin === "null" ? "" : location.origin;
+    const link = convite ? `${origem}/convite/${convite.id}` : "";
 
     async function gerar() {
         setGerando(true);
