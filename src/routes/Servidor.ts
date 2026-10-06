@@ -60,6 +60,21 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send(entidades);
     })
 
+    fastify.post("/servidor/editar", {schema: {body:Type.Object({idServidor: Type.String(),nomeCanal:Type.String({minLength: 1, maxLength: 50})})}} ,async (req,rep) => {
+        const {idServidor,nomeCanal} = req.body;
+        const idUsuario = req.user.id;
+
+        const updateE = await prisma.servidor.updateMany({where: {id:idServidor, membros: {some: {servidorId:idServidor,usuarioId:idUsuario,permissao: Permissao.ADMIN}}},data: {nome: nomeCanal}});
+
+        if(updateE.count === 0) {
+            return rep.code(400).send({mensagem:"Ocorreu um erro ao atualizar os dados do servidor"});
+        }
+        
+        await publicarParaServidor(idServidor,{tipo: "UPDATE_SERVER",servidorId:idServidor,nome:nomeCanal});
+
+        return rep.code(200).send({})
+    })
+
     fastify.get("/servidor/:id", {schema: {params: Type.Object({id:Type.String()})}} ,async (req,rep) => {
         const {id} = req.params;
         const idUsuario = req.user.id;

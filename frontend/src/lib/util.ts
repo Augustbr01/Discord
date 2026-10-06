@@ -32,8 +32,7 @@ export function iniciais(nome: string) {
 
 // os avatares padrão do Discord não dizem nada sobre a pessoa; esses viram iniciais no tom dela
 export function avatarReal(url: string | null | undefined) {
-    if (!url) return null;
-    return /cdn\.discordapp\.com\/embed\/avatars\//.test(url) ? null : url;
+    return url ?? null;
 }
 
 // "Sessão" e "sessao" viram a mesma coisa na busca

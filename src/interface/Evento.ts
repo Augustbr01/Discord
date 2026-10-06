@@ -19,3 +19,4 @@ export type Evento =
     | { tipo: "MENSAGEM_CRIADA"; canalId: string; mensagem: Mensagem }
     | { tipo: "CANAL_CRIADO"; servidorId: string ;canal: Canal }
     | {tipo: "CANAL_APAGADO"; servidorId : string ;canalId: string }
+    | {tipo: "UPDATE_SERVER"; servidorId: string; nome : string}
