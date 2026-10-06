@@ -67,7 +67,7 @@ app.register(routeWebSocket,{prefix:"/api"});
 app.register(RotaAuth, {prefix:"/api"});
 app.register(LiveKit,{prefix:"/api"});
 
-app.listen({port:3001}, (error) => {
+app.listen({port:3000}, (error) => {
     console.log("ligou");
     if(error) {
         console.log(error);

@@ -97,9 +97,13 @@ export const api = {
     entrarConvite: (idConvite: string) =>
         chamar<{ servidor: ServidorResumo }>(`/servidor/convite/${idConvite}`, post()),
 
-    listarMensagens: (canalId: string) => chamar<Mensagem[]>(`/canal/${canalId}/mensagens`),
+    // idUltima = cursor: traz as mensagens ANTES dessa (pra rolar e carregar mais antigas)
+    listarMensagens: (canalId: string, idUltima?: string) => {
+        const qs = idUltima ? `?${new URLSearchParams({ idUltima })}` : "";
+        return chamar<Mensagem[]>(`/servidor/mensagens/${canalId}${qs}`);
+    },
     enviarMensagem: (canalId: string, conteudo: string) =>
-        chamar<Mensagem>(`/canal/${canalId}/mensagens`, post({ conteudo })),
+        chamar<Mensagem>("/servidor/mensagem/criar", post({ canalId, mensagem: conteudo })),
 
     tokenVoz: (canalId: string) =>
         chamar<ConexaoVoz>(`/livekit/token?${new URLSearchParams({ salaId: canalId })}`),

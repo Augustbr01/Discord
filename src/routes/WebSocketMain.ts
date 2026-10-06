@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { conectar, publicarParaServidor, publicarParaUsuarios } from "./eventosConexao";
-
+import { buscarServidor } from "../config/CacheTyping";
 export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
 
     fastify.addHook('onRequest', async (req,rep) => {
@@ -16,6 +16,26 @@ export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
 
         socket.on("close", () => {
             desconectar();
+        })
+
+        socket.on("message", async (raw) => {
+            try {
+
+                const msg = JSON.parse(raw.toString());
+
+                if(msg?.tipo === "DIGITANDO" && typeof msg.canalId === "string") {
+                                    
+                    const idServidor = await buscarServidor(msg.canalId);
+
+                    if(!idServidor) {
+                        return;
+                    }
+
+                    await publicarParaServidor(idServidor,{tipo:"DIGITANDO",canalId:msg.canalId,usuarioId:req.user.id})
+                }
+            }catch(e) {
+                return;
+            }
         })
     })
 }

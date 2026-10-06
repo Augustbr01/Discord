@@ -10,6 +10,17 @@
     flex-direction: column;
 }
 
+/* "fulano está digitando…" logo acima do compositor */
+.chat-digitando {
+    padding: 2px 18px 4px;
+    font-size: 12.5px;
+    font-style: italic;
+    color: var(--texto-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .chat-rolagem {
     flex: 1;
     min-height: 0;

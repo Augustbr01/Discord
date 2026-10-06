@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ErroApi, type Mensagem, type Usuario } from "../api";
 import { gateway } from "../lib/gateway";
 import { idLocal } from "../lib/util";
+
+// quantas mensagens o back manda por página (bate com o default do GET).
+// se vier menos que isso, é porque não há mais histórico anterior.
+const LIMITE = 50;
 
 // mensagem que você mandou e ainda não voltou do servidor
 export type MensagemLocal = {
@@ -24,6 +28,10 @@ export function useMensagens(canalId: string, eu: Usuario) {
     const [estado, setEstado] = useState<EstadoChat>("carregando");
     const [mensagens, setMensagens] = useState<Mensagem[]>([]);
     const [pendentes, setPendentes] = useState<MensagemLocal[]>([]);
+    // scroll infinito: se ainda há mensagens mais antigas pra buscar
+    const [temMais, setTemMais] = useState(true);
+    const [carregandoMais, setCarregandoMais] = useState(false);
+    const carregandoRef = useRef(false); // trava síncrona contra buscas concorrentes
 
     useEffect(() => {
         let ativo = true;
@@ -31,12 +39,16 @@ export function useMensagens(canalId: string, eu: Usuario) {
         setEstado("carregando");
         setMensagens([]);
         setPendentes([]);
+        setTemMais(true);
+        setCarregandoMais(false);
+        carregandoRef.current = false;
 
         const buscar = async (primeira: boolean) => {
             try {
                 const lista = await api.listarMensagens(canalId);
                 if (!ativo) return;
                 setMensagens(ordenar(lista));
+                setTemMais(lista.length >= LIMITE); // veio página cheia? pode ter mais
                 setEstado("pronto");
             } catch (err) {
                 if (!ativo) return;
@@ -100,5 +112,27 @@ export function useMensagens(canalId: string, eu: Usuario) {
         setPendentes((p) => p.filter((m) => m.idLocal !== id));
     }, []);
 
-    return { estado, mensagens, pendentes, enviar, reenviar, descartar };
+    // busca as mensagens anteriores à mais antiga que já temos (rolar pra cima)
+    const carregarMais = useCallback(async () => {
+        const maisAntiga = mensagens[0];
+        if (!maisAntiga || carregandoRef.current) return;
+        carregandoRef.current = true;
+        setCarregandoMais(true);
+        try {
+            const antigas = await api.listarMensagens(canalId, maisAntiga.id);
+            setMensagens((m) => {
+                const ids = new Set(m.map((x) => x.id));
+                const novas = antigas.filter((x) => !ids.has(x.id));
+                return novas.length ? ordenar([...novas, ...m]) : m;
+            });
+            if (antigas.length < LIMITE) setTemMais(false); // chegou no começo do canal
+        } catch {
+            // deixa tentar de novo no próximo scroll
+        } finally {
+            carregandoRef.current = false;
+            setCarregandoMais(false);
+        }
+    }, [canalId, mensagens]);
+
+    return { estado, mensagens, pendentes, temMais, carregandoMais, enviar, reenviar, descartar, carregarMais };
 }

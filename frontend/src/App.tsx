@@ -424,6 +424,7 @@ function Aplicacao() {
                 key={canalAtual.id}
                 canal={canalAtual}
                 eu={eu}
+                membros={membros}
                 membrosVisivel={membrosVisivel}
                 onMembros={alternarMembros}
                 onBuscar={() => setPaletaAberta(true)}

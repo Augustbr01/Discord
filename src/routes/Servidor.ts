@@ -60,6 +60,49 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send(entidades);
     })
 
+    fastify.get("/servidor/mensagens/:canalId", {schema: {params: Type.Object({canalId:Type.String()}),querystring: Type.Object({idUltima:Type.Optional(Type.String())})}}, async (req,rep) => {
+        const {canalId} = req.params;
+        const {idUltima} = req.query;
+        const idUsuario = req.user.id;
+
+        const isMembro = await prisma.canal.findUnique({where:{id:canalId,servidor: {membros: {some: {usuarioId:idUsuario}}}}});
+
+        if(!isMembro) {
+            return rep.code(401).send({mensagem:"Não autorizado!"});
+        }
+
+        const mensagens = await prisma.mensagem.findMany({where:{canalId:canalId},...(idUltima ? {cursor: {id:idUltima},skip: 1 } : {}),orderBy: {criadoEm: "desc"},take:50,select: {id:true,conteudo:true,criadoEm:true,editadaEm:true,autorId:true,autor: {select: {id:true,nome:true,avatarUrl:true}}}});
+
+        return rep.code(200).send(mensagens.reverse());
+    })
+    
+    fastify.post("/servidor/permissao", {schema:{body:Type.Object({idServidor:Type.String(),membroSofrendo:Type.String(),tipo:Type.Enum(Permissao)})}} ,async (req,rep) => {
+        const usuarioId = req.user.id;
+        const {idServidor,membroSofrendo,tipo} = req.body;
+
+        const isAdmin = await prisma.servidor.findMany({where:{id:idServidor, membros: {some: {usuarioId:usuarioId,permissao: Permissao.ADMIN}}}});
+
+        if(!isAdmin) {
+            return rep.code(401).send({mensagem:"Acesso negado"});
+        }
+    })
+
+    fastify.post("/servidor/mensagem/criar", {schema: {body: Type.Object({canalId: Type.String(),mensagem:Type.String({minLength: 1,maxLength:200})})}} ,async (req,rep) => {
+        const {canalId,mensagem} = req.body;
+        const usuarioId = req.user.id;
+
+        const canal = await prisma.canal.findUnique({where:{id:canalId,servidor: {membros: {some: {usuarioId:usuarioId}}}},select:{servidorId:true}});
+        if(!canal) {
+            return rep.code(404).send({mensagem:"Sem permissão ou não encontrado"});
+        }
+        
+        const createMsg = await prisma.mensagem.create({data: {autorId:usuarioId,canalId:canalId,conteudo:mensagem},select: {id:true,conteudo:true,criadoEm:true,editadaEm:true,autor: {select: {id:true,nome:true,avatarUrl:true}}}});
+
+        await publicarParaServidor(canal.servidorId,{tipo:"MENSAGEM_CRIADA",servidor_id:canal.servidorId,canalId,mensagem: {id:createMsg.id,editadaEm:null,conteudo:createMsg.conteudo,criadoEm:createMsg.criadoEm,autor: {id:createMsg.autor.id,nome:createMsg.autor.nome,avatarUrl:createMsg.autor.avatarUrl}}});
+
+        return rep.code(201).send(createMsg);
+    })
+
     fastify.post("/servidor/editar", {schema: {body:Type.Object({idServidor: Type.String(),nomeCanal:Type.String({minLength: 1, maxLength: 50})})}} ,async (req,rep) => {
         const {idServidor,nomeCanal} = req.body;
         const idUsuario = req.user.id;

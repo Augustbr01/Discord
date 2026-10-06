@@ -19,4 +19,9 @@ export type EventoGateway =
     | { tipo: "SAIU_DA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "CANAL_CRIADO"; servidorId: string; canal: Canal }
     | { tipo: "CANAL_APAGADO"; servidorId: string; canalId: string }
-    | { tipo: "MENSAGEM_CRIADA"; canalId: string; mensagem: Mensagem };
+    | { tipo: "MENSAGEM_CRIADA"; canalId: string; mensagem: Mensagem }
+    | { tipo: "DIGITANDO"; canalId: string; usuarioId: string };
+
+// o que o CLIENTE manda pelo WebSocket (entrada). O servidor carimba a identidade
+// (usuarioId) a partir do socket — o cliente só diz "onde".
+export type MensagemCliente = { tipo: "DIGITANDO"; canalId: string };

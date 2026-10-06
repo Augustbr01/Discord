@@ -1,8 +1,10 @@
 import { Fragment, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowDown, Hash, Search, SendHorizontal, Users } from "lucide-react";
 import { LIMITE_MENSAGEM, type Canal, type Usuario } from "../api";
+import { useDigitando } from "../hooks/useDigitando";
 import { useMensagens, type MensagemLocal } from "../hooks/useMensagens";
 import { hora, mesmoDia, partesTexto, quando, rotuloDia, teclaAtalho } from "../lib/util";
+import type { MapaMembros } from "../tipos";
 import { Avatar } from "./ui/Avatar";
 import { Cabecalho } from "./ui/Cabecalho";
 import { Dica } from "./ui/Dica";
@@ -13,6 +15,7 @@ const JANELA_GRUPO_MS = 7 * 60 * 1000;
 type Props = {
     canal: Canal;
     eu: Usuario;
+    membros: MapaMembros;
     membrosVisivel: boolean;
     onMembros: () => void;
     onBuscar: () => void;
@@ -28,11 +31,14 @@ type Item = {
     local?: MensagemLocal;
 };
 
-export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onMenu }: Props) {
-    const { estado, mensagens, pendentes, enviar, reenviar, descartar } = useMensagens(canal.id, eu);
+export function CanalTexto({ canal, eu, membros, membrosVisivel, onMembros, onBuscar, onMenu }: Props) {
+    const { estado, mensagens, pendentes, temMais, carregandoMais, enviar, reenviar, descartar, carregarMais } = useMensagens(canal.id, eu);
+    const { nomes: digitando, notificar } = useDigitando(canal.id, eu, membros);
 
     const listaRef = useRef<HTMLDivElement>(null);
     const noFimRef = useRef(true);
+    // altura da rolagem antes de prepender histórico, pra manter a leitura no lugar
+    const preservarRef = useRef<number | null>(null);
     const [novas, setNovas] = useState(false);
 
     const itens: Item[] = [
@@ -62,6 +68,12 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
     useLayoutEffect(() => {
         const el = listaRef.current;
         if (!el) return;
+        // acabamos de prepender histórico (rolar pra cima): mantém a posição de leitura
+        if (preservarRef.current !== null) {
+            el.scrollTop += el.scrollHeight - preservarRef.current;
+            preservarRef.current = null;
+            return;
+        }
         if (noFimRef.current) {
             el.scrollTop = el.scrollHeight;
         } else if (itens.length > 0) {
@@ -74,6 +86,11 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
         if (!el) return;
         noFimRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         if (noFimRef.current) setNovas(false);
+        // perto do topo: carrega mais antigas, guardando a altura pra preservar a posição
+        if (el.scrollTop < 120 && temMais && !carregandoMais) {
+            preservarRef.current = el.scrollHeight;
+            carregarMais();
+        }
     }
 
     function irProFim() {
@@ -113,11 +130,13 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
             <div className="chat">
                 <div className="chat-rolagem" ref={listaRef} onScroll={aoRolar}>
                     <div className="chat-conteudo">
-                        <div className="chat-inicio">
-                            <span className="chat-inicio-icone"><Hash size={30} /></span>
-                            <h2>Bem-vindo a #{canal.nome}</h2>
-                            <p>Este é o começo do canal #{canal.nome}.</p>
-                        </div>
+                        {!temMais && (
+                            <div className="chat-inicio">
+                                <span className="chat-inicio-icone"><Hash size={30} /></span>
+                                <h2>Bem-vindo a #{canal.nome}</h2>
+                                <p>Este é o começo do canal #{canal.nome}.</p>
+                            </div>
+                        )}
 
                         {estado === "carregando" && <EsqueletoMensagens />}
 
@@ -197,7 +216,11 @@ export function CanalTexto({ canal, eu, membrosVisivel, onMembros, onBuscar, onM
                     </button>
                 )}
 
-                <Compositor canalNome={canal.nome} desativado={indisponivel} onEnviar={aoEnviar} />
+                {digitando.length > 0 && (
+                    <div className="chat-digitando" aria-live="polite">{textoDigitando(digitando)}</div>
+                )}
+
+                <Compositor canalNome={canal.nome} desativado={indisponivel} onEnviar={aoEnviar} onDigitar={notificar} />
             </div>
         </div>
     );
@@ -218,9 +241,17 @@ function Texto({ conteudo }: { conteudo: string }) {
     );
 }
 
-type CompositorProps = { canalNome: string; desativado: boolean; onEnviar: (conteudo: string) => void };
+// monta "Fulano está digitando…" conforme a quantidade de gente
+function textoDigitando(nomes: string[]) {
+    if (nomes.length === 1) return `${nomes[0]} está digitando…`;
+    if (nomes.length === 2) return `${nomes[0]} e ${nomes[1]} estão digitando…`;
+    if (nomes.length === 3) return `${nomes[0]}, ${nomes[1]} e ${nomes[2]} estão digitando…`;
+    return "Várias pessoas estão digitando…";
+}
 
-function Compositor({ canalNome, desativado, onEnviar }: CompositorProps) {
+type CompositorProps = { canalNome: string; desativado: boolean; onEnviar: (conteudo: string) => void; onDigitar: () => void };
+
+function Compositor({ canalNome, desativado, onEnviar, onDigitar }: CompositorProps) {
     const [texto, setTexto] = useState("");
     const ref = useRef<HTMLTextAreaElement>(null);
     const restante = LIMITE_MENSAGEM - texto.length;
@@ -258,7 +289,10 @@ function Compositor({ canalNome, desativado, onEnviar }: CompositorProps) {
                     ref={ref}
                     rows={1}
                     value={texto}
-                    onChange={(e) => setTexto(e.target.value)}
+                    onChange={(e) => {
+                        setTexto(e.target.value);
+                        onDigitar();
+                    }}
                     onKeyDown={aoTeclar}
                     maxLength={LIMITE_MENSAGEM}
                     placeholder={desativado ? "Chat de texto indisponível" : `Conversar em #${canalNome}`}
