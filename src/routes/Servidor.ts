@@ -177,7 +177,7 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             await roomService.deleteRoom(idSala).catch((e) => {});
         }
 
-        publicarParaServidor(servidor.servidorId, {tipo: "CANAL_APAGADO",servidorId:servidor.servidorId,canalId:idSala});
+        await publicarParaServidor(servidor.servidorId, {tipo: "CANAL_APAGADO",servidorId:servidor.servidorId,canalId:idSala});
 
         return rep.code(200).send({mensagem:"Canal deletado com sucesso"})
     })
