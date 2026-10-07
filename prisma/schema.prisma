@@ -104,7 +104,7 @@ model Mensagem {
   id String @id @db.Uuid @default(uuid(7))
   canalId String @db.Uuid
   autorId String @db.Uuid
-  conteudo String @db.VarChar(200)
+  conteudo String @db.VarChar(1000)
   editadaEm DateTime?
   criadoEm DateTime @default(now())
 

@@ -2,6 +2,8 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Building2, ChevronDown, Clapperboard, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
 import type { Canal, ServidorDetalhe, TipoCanal, Usuario } from "../api";
 import { useControleVoz } from "../contexto/ControleVoz";
+import { chaveTela, useFocoChamada } from "../contexto/FocoChamada";
+import { usePerfil } from "../contexto/Perfil";
 import { useCliqueFora } from "../hooks/useCliqueFora";
 import type { MapaMembros, Voz } from "../tipos";
 import { PessoasAoVivo } from "./chamada/AoVivo";
@@ -23,8 +25,10 @@ type Props = {
     onApagarCanal: (canal: Canal) => void;
     onConvidar: () => void;
     onNovoCanal: (tipo: TipoCanal) => void;
+    onEditarServidor: () => void;
     onAbrirChamada: () => void;
     onSairChamada: () => void;
+    onEditarFoto: () => void;
     onSairConta: () => void;
     onMundo3D: () => void;
 };
@@ -33,6 +37,20 @@ type Props = {
 export function PainelCanais(props: Props) {
     const { servidor, carregando, canalAtualId, voz, entrandoEm, eu, souAdmin, membros } = props;
     const { surdo } = useControleVoz();
+    const { focar, focarAoEntrar } = useFocoChamada();
+    const { abrirPerfil } = usePerfil();
+
+    // "ao vivo" de alguém na sala: destaca a tela dessa pessoa e abre a chamada
+    // "ao vivo" numa sala em que você não está: entra e já abre a tela da pessoa
+    function entrarEAssistir(canal: Canal, identity: string) {
+        focarAoEntrar(chaveTela(identity));
+        props.onCanal(canal);
+    }
+
+    function assistir(identity: string) {
+        focar(chaveTela(identity));
+        props.onAbrirChamada();
+    }
 
     const texto = servidor?.canais.filter((c) => c.tipo === "TEXTO") ?? [];
     const salas = servidor?.canais.filter((c) => c.tipo === "VOZ") ?? [];
@@ -45,6 +63,7 @@ export function PainelCanais(props: Props) {
                     souAdmin={souAdmin}
                     onConvidar={props.onConvidar}
                     onNovoCanal={props.onNovoCanal}
+                    onEditar={props.onEditarServidor}
                 />
             ) : (
                 <div className="painel-canais-topo">
@@ -97,14 +116,31 @@ export function PainelCanais(props: Props) {
                                         </div>
 
                                         {conectado ? (
-                                            <PessoasAoVivo membros={membros} eu={eu} surdo={surdo} />
+                                            <PessoasAoVivo membros={membros} eu={eu} surdo={surdo} onAssistir={assistir} />
                                         ) : (
                                             pessoas.length > 0 && (
                                                 <ul className="voz-pessoas">
                                                     {pessoas.map((p) => (
                                                         <li key={p.id}>
-                                                            <Avatar nome={p.nome} url={p.avatarUrl} tamanho={22} />
-                                                            <span className="truncar">{p.nome}</span>
+                                                            <button
+                                                                className="voz-pessoa-quem"
+                                                                onClick={(e) => abrirPerfil(p, e.currentTarget)}
+                                                                aria-haspopup="dialog"
+                                                            >
+                                                                <Avatar nome={p.nome} url={p.avatarUrl} tamanho={22} />
+                                                                <span className="truncar">{p.nome}</span>
+                                                            </button>
+                                                            {c.telas?.includes(p.id) && (
+                                                                <span className="voz-pessoa-estado">
+                                                                    <button
+                                                                        className="voz-ao-vivo"
+                                                                        onClick={() => entrarEAssistir(c, p.id)}
+                                                                        title={`Entrar e assistir a tela de ${p.nome}`}
+                                                                    >
+                                                                        Ao vivo
+                                                                    </button>
+                                                                </span>
+                                                            )}
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -121,7 +157,12 @@ export function PainelCanais(props: Props) {
             </nav>
 
             {voz && <PainelVoz voz={voz} onAbrir={props.onAbrirChamada} onSair={props.onSairChamada} />}
-            <PainelUsuario eu={eu} salaAtual={voz?.canal.nome ?? null} onSair={props.onSairConta} />
+            <PainelUsuario
+                eu={eu}
+                salaAtual={voz?.canal.nome ?? null}
+                onEditarFoto={props.onEditarFoto}
+                onSair={props.onSairConta}
+            />
         </aside>
     );
 }
@@ -131,10 +172,11 @@ type CabecalhoProps = {
     souAdmin: boolean;
     onConvidar: () => void;
     onNovoCanal: (tipo: TipoCanal) => void;
+    onEditar: () => void;
 };
 
 // nome do servidor; pra admin vira um menu com as ações do servidor
-function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal }: CabecalhoProps) {
+function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal, onEditar }: CabecalhoProps) {
     const [aberto, setAberto] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const fechar = useCallback(() => setAberto(false), []);
@@ -176,6 +218,10 @@ function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal }: Cabe
                     </button>
                     <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("VOZ"))}>
                         Criar sala de voz <Volume2 size={16} />
+                    </button>
+                    <span className="menu-separador" />
+                    <button role="menuitem" className="menu-item" onClick={() => executar(onEditar)}>
+                        Editar servidor <Settings size={16} />
                     </button>
                 </div>
             )}

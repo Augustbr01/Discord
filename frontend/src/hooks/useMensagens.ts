@@ -66,8 +66,16 @@ export function useMensagens(canalId: string, eu: Usuario) {
         // mensagem nova deste canal chega pelo gateway (dedup por id porque quem
         // enviou também recebe o próprio evento, além da resposta do POST)
         const pararEventos = gateway.assinar((evento) => {
-            if (!ativo || evento.tipo !== "MENSAGEM_CRIADA" || evento.canalId !== canalId) return;
-            setMensagens((m) => (m.some((x) => x.id === evento.mensagem.id) ? m : ordenar([...m, evento.mensagem])));
+            if (!ativo) return;
+            if (evento.tipo === "MENSAGEM_CRIADA" && evento.canalId === canalId) {
+                setMensagens((m) => (m.some((x) => x.id === evento.mensagem.id) ? m : ordenar([...m, evento.mensagem])));
+            } else if (evento.tipo === "MENSAGEM_EDITADA" && evento.canalId === canalId) {
+                // troca no lugar; se ainda não carregou essa mensagem (histórico antigo), ignora
+                setMensagens((m) => m.map((x) => (x.id === evento.mensagem.id ? evento.mensagem : x)));
+            } else if (evento.tipo === "MENSAGEM_DELETADA" && evento.canalId === canalId) {
+                const id = evento.mensagem.id;
+                setMensagens((m) => (m.some((x) => x.id === id) ? m.filter((x) => x.id !== id) : m));
+            }
         });
         // ao reconectar, rebusca pra pegar o que chegou enquanto esteve offline
         const pararReconexao = gateway.aoReconectar(() => buscar(true));
@@ -112,6 +120,19 @@ export function useMensagens(canalId: string, eu: Usuario) {
         setPendentes((p) => p.filter((m) => m.idLocal !== id));
     }, []);
 
+    // salva a edição e já troca na lista; o erro sobe pra quem chamou mostrar no editor.
+    // O MENSAGEM_EDITADA também chega pra você, com o mesmo conteúdo (sem efeito)
+    const editar = useCallback(async (mensagemId: string, conteudo: string) => {
+        const salva = await api.editarMensagem(mensagemId, canalId, conteudo);
+        setMensagens((m) => m.map((x) => (x.id === salva.id ? salva : x)));
+    }, [canalId]);
+
+    // apaga e já tira da lista; o MENSAGEM_DELETADA também chega pra você (sem efeito)
+    const apagar = useCallback(async (mensagemId: string) => {
+        await api.apagarMensagem(mensagemId, canalId);
+        setMensagens((m) => m.filter((x) => x.id !== mensagemId));
+    }, [canalId]);
+
     // busca as mensagens anteriores à mais antiga que já temos (rolar pra cima)
     const carregarMais = useCallback(async () => {
         const maisAntiga = mensagens[0];
@@ -134,5 +155,5 @@ export function useMensagens(canalId: string, eu: Usuario) {
         }
     }, [canalId, mensagens]);
 
-    return { estado, mensagens, pendentes, temMais, carregandoMais, enviar, reenviar, descartar, carregarMais };
+    return { estado, mensagens, pendentes, temMais, carregandoMais, enviar, reenviar, descartar, editar, apagar, carregarMais };
 }

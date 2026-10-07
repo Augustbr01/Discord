@@ -1,26 +1,40 @@
 // Você em primeira pessoa: mouse (com o ponteiro travado) ou toque pra olhar,
 // WASD/setas ou o joystick da tela pra andar. Esbarra nas paredes e nos móveis,
-// sobe os degraus do cinema, pula (Espaço), agacha (C) e desliza (correndo + C), e senta.
+// sobe os degraus do cinema, pula (Espaço ou rodinha), agacha (C), anda devagar (Shift) e senta.
+//
+// A movimentação é a da Source/CS: aceleração e atrito no chão, controle no ar (air strafe)
+// e bunny hop — pular no tick em que encosta no chão não perde velocidade pro atrito.
+// A física roda em ticks fixos de 64 por segundo (como o CS2) e a câmera interpola entre eles.
 import { useEffect, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import type * as THREE from "three";
 import { estaDigitando } from "../../lib/util";
+import { fovVertical, lerConfig, radianosPorPonto } from "./config";
 import {
-    alturaChao, dentro, moverComColisao, pontoLivre, DEGRAU_MAXIMO, RAIO_JOGADOR,
+    alturaChao, dentro, moverComColisao, pontoLivre, ALTURA, ALTURA_ELEVADOR, ALTURA_HALL, DEGRAU_MAXIMO, RAIO_JOGADOR,
     type Assento, type Interativo, type Planta, type Ponto,
 } from "./planta";
 import { POSTURA, type Pose } from "./rede";
 
-// altura dos olhos acima dos pés em cada postura
-const OLHOS = { [POSTURA.EM_PE]: 1.62, [POSTURA.AGACHADO]: 1.0, [POSTURA.DESLIZANDO]: 0.8, [POSTURA.SENTADO]: 1.15 } as Record<number, number>;
-const ANDAR = 3.6; // m/s
-const CORRER = 6.4;
-const AGACHADO = 1.8;
-const PULO = 5.2; // velocidade pra cima ao pular
-const GRAVIDADE = 15;
-const DESLIZE_S = 0.75;
-const SENSIBILIDADE = 0.0022;
+// 1 unidade do CS = 1 polegada
+const U = 0.0254;
+// altura dos olhos acima dos pés em cada postura (64 e 46 unidades no CS)
+const OLHOS = { [POSTURA.EM_PE]: 64 * U, [POSTURA.AGACHADO]: 46 * U, [POSTURA.DESLIZANDO]: 46 * U, [POSTURA.SENTADO]: 1.15 } as Record<number, number>;
+
+const TICK = 1 / 64;
+const VELOCIDADE = 250 * U; // a de quem corre com a faca no CS
+const FATOR_DEVAGAR = 0.52; // Shift
+const FATOR_AGACHADO = 0.34;
+const ACELERACAO = 5.5; // sv_accelerate
+const ATRITO = 5.2; // sv_friction
+const PARADA = 80 * U; // sv_stopspeed
+const ACELERACAO_AR = 12; // sv_airaccelerate
+const MAXIMO_AR = 30 * U; // o quanto o ar deixa somar na direção que você aperta
+const GRAVIDADE = 800 * U;
+const PULO = 301.993 * U;
+
 const SENSIBILIDADE_TOQUE = 0.005;
-const LIMITE_OLHAR = Math.PI / 2 - 0.08;
+const LIMITE_OLHAR = Math.PI / 2 - 0.02;
 
 export type ControleToque = {
     // joystick: -1..1 em cada eixo (y negativo = pra frente)
@@ -43,23 +57,28 @@ type Props = {
     portaFechada: RefObject<boolean>;
     toque: RefObject<ControleToque>;
     pedido: RefObject<PedidoJogador | null>;
+    // velocidade no chão agora (m/s), pro velocímetro
+    velocidade: RefObject<number>;
     onSala: (salaId: string | null) => void;
     onFoco: (interativo: Interativo | null) => void;
     onTravado: (travado: boolean) => void;
     onPostura: (postura: number) => void;
 };
 
-export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onSala, onFoco, onTravado, onPostura }: Props) {
+export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, velocidade, onSala, onFoco, onTravado, onPostura }: Props) {
     const { camera, gl } = useThree();
     const teclas = useRef(new Set<string>());
-    // apertos que valem uma vez (não importa quanto tempo segura)
-    const apertos = useRef({ pular: false, agachar: false });
+    // pulo apertado (tecla ou rodinha): vale pro próximo tick, e só se estiver no chão nele
+    const querPular = useRef(false);
     const olhar = useRef({ yaw: pose.current.rot, pitch: 0 });
     const fisica = useRef({
         vx: 0, vz: 0, vy: 0, noChao: true,
-        deslize: 0, dirX: 0, dirZ: 0, velDeslize: 0,
-        olhos: OLHOS[POSTURA.EM_PE], cameraY: pose.current.y + OLHOS[POSTURA.EM_PE], inclinacao: 0, passo: 0,
+        // posição do tick anterior (a câmera fica entre ele e o atual)
+        antes: { x: pose.current.x, y: pose.current.y, z: pose.current.z },
+        acumulado: 0,
+        olhos: OLHOS[POSTURA.EM_PE], cameraY: pose.current.y + OLHOS[POSTURA.EM_PE],
         assento: null as Assento | null,
+        agachado: false,
     });
     const sala = useRef<string | null>(null);
     const foco = useRef<string | null>(null);
@@ -77,37 +96,54 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
         // o YouTube na TV deixa o canvas sem receber clique (o iframe fica atrás dele),
         // então o clique que trava o mouse é ouvido no elemento de fora
         const area = canvas.parentElement ?? canvas;
+        const travado = () => document.pointerLockElement === canvas;
+
+        const travar = () => {
+            // entrada bruta: o movimento do mouse sem a aceleração do sistema (nem todo navegador tem)
+            const bruta = lerConfig().entradaBruta;
+            const simples = () => Promise.resolve(canvas.requestPointerLock()).catch(() => {});
+            try {
+                const pedidoTrava = bruta ? canvas.requestPointerLock({ unadjustedMovement: true }) : canvas.requestPointerLock();
+                Promise.resolve(pedidoTrava).catch(() => (bruta ? simples() : undefined));
+            } catch {
+                if (bruta) simples();
+            }
+        };
 
         const aoClicar = (e: MouseEvent) => {
             // no toque não tem ponteiro pra travar: lá quem olha é o arrastar
             const tipo = (e as PointerEvent).pointerType;
             if ((tipo && tipo !== "mouse") || !("requestPointerLock" in canvas)) return;
-            if (!paradoRef.current && document.pointerLockElement !== canvas) {
-                // alguns navegadores devolvem promessa e rejeitam se o pedido vier rápido demais
-                Promise.resolve(canvas.requestPointerLock()).catch(() => {});
-            }
+            if (!paradoRef.current && !travado()) travar();
         };
-        const aoMudarTrava = () => onTravado(document.pointerLockElement === canvas);
+        // rodinha pula (como o "bind mwheeldown +jump" do CS)
+        const aoRodar = (e: WheelEvent) => {
+            if (!travado() || paradoRef.current || e.deltaY === 0) return;
+            querPular.current = true;
+        };
+        const aoMudarTrava = () => onTravado(travado());
         const aoMexer = (e: MouseEvent) => {
-            if (document.pointerLockElement !== canvas || paradoRef.current) return;
-            olhar.current.yaw -= e.movementX * SENSIBILIDADE;
-            olhar.current.pitch = Math.max(-LIMITE_OLHAR, Math.min(LIMITE_OLHAR, olhar.current.pitch - e.movementY * SENSIBILIDADE));
+            if (!travado() || paradoRef.current) return;
+            const cfg = lerConfig();
+            const rad = radianosPorPonto(cfg.sensibilidade);
+            olhar.current.yaw -= e.movementX * rad;
+            const y = cfg.inverterY ? -e.movementY : e.movementY;
+            olhar.current.pitch = Math.max(-LIMITE_OLHAR, Math.min(LIMITE_OLHAR, olhar.current.pitch - y * rad));
         };
         const aoApertar = (e: KeyboardEvent) => {
             if (estaDigitando(e) || e.ctrlKey || e.metaKey || e.altKey) return;
             teclas.current.add(e.code);
-            if (e.repeat) return;
             if (e.code === "Space") {
                 // sem isso o Espaço rola a página ou clica no botão que estiver com foco
                 e.preventDefault();
-                apertos.current.pular = true;
+                if (!e.repeat) querPular.current = true;
             }
-            if (e.code === "KeyC") apertos.current.agachar = true;
         };
         const aoSoltar = (e: KeyboardEvent) => teclas.current.delete(e.code);
         const aoSairDaJanela = () => teclas.current.clear();
 
         area.addEventListener("click", aoClicar);
+        document.addEventListener("wheel", aoRodar, { passive: true });
         document.addEventListener("pointerlockchange", aoMudarTrava);
         document.addEventListener("mousemove", aoMexer);
         window.addEventListener("keydown", aoApertar);
@@ -115,6 +151,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
         window.addEventListener("blur", aoSairDaJanela);
         return () => {
             area.removeEventListener("click", aoClicar);
+            document.removeEventListener("wheel", aoRodar);
             document.removeEventListener("pointerlockchange", aoMudarTrava);
             document.removeEventListener("mousemove", aoMexer);
             window.removeEventListener("keydown", aoApertar);
@@ -133,6 +170,15 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
 
     const caixas = () => (portaFechada.current ? [...planta.colisao, planta.portaElevador] : planta.colisao);
 
+    // altura do teto onde você está (pra não atravessar com o pulo)
+    function teto(p: Ponto) {
+        if (dentro(planta.elevador, p)) return ALTURA_ELEVADOR;
+        const s = planta.salas.find((q) => dentro(q.ret, p));
+        if (s) return s.altura;
+        if (dentro(planta.hall, p)) return ALTURA_HALL;
+        return ALTURA;
+    }
+
     // levanta e fica em pé na frente do lugar (um pouco mais longe se ali estiver ocupado)
     function levantar() {
         const f = fisica.current;
@@ -146,22 +192,132 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
         p.x = alvo.x;
         p.z = alvo.z;
         p.y = alturaChao(planta.degraus, alvo);
+        f.antes = { x: p.x, y: p.y, z: p.z };
         f.assento = null;
         f.vx = f.vz = f.vy = 0;
         f.noChao = true;
     }
 
+    // ---------- um tick da física (Source) ----------
+
+    function atrito(dt: number) {
+        const f = fisica.current;
+        const vel = Math.hypot(f.vx, f.vz);
+        if (vel < 0.001) {
+            f.vx = f.vz = 0;
+            return;
+        }
+        const controle = vel < PARADA ? PARADA : vel;
+        const nova = Math.max(0, vel - controle * ATRITO * dt);
+        f.vx *= nova / vel;
+        f.vz *= nova / vel;
+    }
+
+    // soma velocidade na direção desejada até chegar em `desejada` (no ar, só até MAXIMO_AR
+    // na direção apertada — é isso que deixa ganhar velocidade virando o mouse com A/D no pulo)
+    function acelerar(dirX: number, dirZ: number, desejada: number, aceleracao: number, limite: number, dt: number) {
+        const f = fisica.current;
+        const atual = f.vx * dirX + f.vz * dirZ;
+        const falta = Math.min(desejada, limite) - atual;
+        if (falta <= 0) return;
+        const soma = Math.min(aceleracao * desejada * dt, falta);
+        f.vx += soma * dirX;
+        f.vz += soma * dirZ;
+    }
+
+    function tick(dt: number, frente: number, lado: number, agachar: boolean, devagar: boolean, pular: boolean) {
+        const f = fisica.current;
+        const p = pose.current;
+        f.antes = { x: p.x, y: p.y, z: p.z };
+        f.agachado = agachar;
+
+        // direção que você quer ir, no andar: frente = (-sen yaw, -cos yaw); direita = (cos yaw, -sen yaw)
+        const yaw = olhar.current.yaw;
+        const intensidade = Math.min(1, Math.hypot(frente, lado));
+        let dirX = 0;
+        let dirZ = 0;
+        if (intensidade > 0.05) {
+            const norma = Math.hypot(frente, lado);
+            const fr = frente / norma;
+            const la = lado / norma;
+            dirX = -Math.sin(yaw) * fr + Math.cos(yaw) * la;
+            dirZ = -Math.cos(yaw) * fr - Math.sin(yaw) * la;
+        }
+        const desejada = VELOCIDADE * (agachar ? FATOR_AGACHADO : devagar ? FATOR_DEVAGAR : 1) * intensidade;
+
+        if (f.noChao) {
+            if (pular) {
+                // pulou: sai do chão antes do atrito (bhop no tick certo não perde nada)
+                f.vy = PULO;
+                f.noChao = false;
+            } else {
+                atrito(dt);
+            }
+        }
+        if (f.noChao) acelerar(dirX, dirZ, desejada, ACELERACAO, Infinity, dt);
+        else acelerar(dirX, dirZ, desejada, ACELERACAO_AR, MAXIMO_AR, dt);
+
+        // andar com colisão: degrau alto demais conta como parede
+        const pes = p.y;
+        const novo = moverComColisao(
+            p,
+            { x: p.x + f.vx * dt, z: p.z + f.vz * dt },
+            caixas(),
+            RAIO_JOGADOR,
+            (q) => alturaChao(planta.degraus, q) - pes <= DEGRAU_MAXIMO,
+        );
+        // bateu: a velocidade fica só no que deu pra andar (desliza na parede, não acumula)
+        const realX = (novo.x - p.x) / dt;
+        const realZ = (novo.z - p.z) / dt;
+        if (Math.abs(realX) < Math.abs(f.vx)) f.vx = realX;
+        if (Math.abs(realZ) < Math.abs(f.vz)) f.vz = realZ;
+        p.x = novo.x;
+        p.z = novo.z;
+
+        // chão, gravidade e teto
+        const chao = alturaChao(planta.degraus, p);
+        if (f.noChao) {
+            // desce degrau pequeno colado no chão; mais alto que isso, cai
+            if (p.y - chao > DEGRAU_MAXIMO) {
+                f.noChao = false;
+                f.vy = 0;
+            } else {
+                p.y = chao;
+            }
+        }
+        if (!f.noChao) {
+            f.vy -= GRAVIDADE * dt;
+            p.y += f.vy * dt;
+            // o limite é a câmera não passar do teto (pela cabeça, o pulo do CS bateria nos 3,2 m do corredor)
+            const limite = teto(p) - 0.1 - OLHOS[agachar ? POSTURA.AGACHADO : POSTURA.EM_PE];
+            if (p.y > limite && f.vy > 0) {
+                p.y = limite;
+                f.vy = 0;
+            }
+            if (p.y <= chao) {
+                p.y = chao;
+                f.vy = 0;
+                f.noChao = true;
+            }
+        }
+    }
+
     useFrame((_, delta) => {
-        // PC lento (poucos quadros) ainda anda na velocidade certa; o teto evita atravessar
-        // parede num quadro travado (0.1 s correndo = 0.64 m, menos que parede + raio)
-        const dt = Math.min(delta, 0.1);
+        // aba em segundo plano / travada: não tenta recuperar segundos de física de uma vez
+        const dt = Math.min(delta, 0.25);
         const t = teclas.current;
         const p = pose.current;
         const f = fisica.current;
         const toq = toque.current;
-        const pular = apertos.current.pular || toq.pular;
-        const apertouAgachar = apertos.current.agachar;
-        apertos.current.pular = apertos.current.agachar = toq.pular = false;
+        const cfg = lerConfig();
+
+        // campo de visão das configurações
+        const cam = camera as THREE.PerspectiveCamera;
+        const fov = fovVertical(cfg.fov);
+        if (Math.abs(cam.fov - fov) > 0.01) {
+            cam.fov = fov;
+            cam.updateProjectionMatrix();
+        }
 
         // olhar pelo toque
         if (toq.olhar.x || toq.olhar.y) {
@@ -169,6 +325,10 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
             olhar.current.pitch = Math.max(-LIMITE_OLHAR, Math.min(LIMITE_OLHAR, olhar.current.pitch - toq.olhar.y * SENSIBILIDADE_TOQUE));
             toq.olhar.x = 0;
             toq.olhar.y = 0;
+        }
+        if (toq.pular) {
+            querPular.current = true;
+            toq.pular = false;
         }
 
         let frente = 0;
@@ -182,7 +342,9 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
             lado += toq.andar.x;
         }
         const intensidade = Math.min(1, Math.hypot(frente, lado));
-        const yaw = olhar.current.yaw;
+        const agachar = (t.has("KeyC") || toq.agachado) && !paradoRef.current;
+        const devagar = t.has("ShiftLeft") || t.has("ShiftRight");
+        const segurandoPulo = t.has("Space") && !paradoRef.current;
 
         // ---------- sentar / levantar ----------
         const pedidoAgora = pedido.current;
@@ -190,119 +352,46 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, onS
         if (pedidoAgora?.tipo === "sentar" && !f.assento) {
             const a = pedidoAgora.assento;
             f.assento = a;
-            f.deslize = 0;
             p.x = a.x;
             p.z = a.z;
             p.y = a.y;
+            f.antes = { x: p.x, y: p.y, z: p.z };
+            f.vx = f.vz = f.vy = 0;
             olhar.current.yaw = a.rot;
             olhar.current.pitch = 0;
-        } else if (f.assento && (pedidoAgora?.tipo === "levantar" || pular || intensidade > 0.3)) {
+        } else if (f.assento && (pedidoAgora?.tipo === "levantar" || querPular.current || intensidade > 0.3)) {
+            querPular.current = false;
             levantar();
         }
 
         let novaPostura: number;
-        let movendo = false;
-
         if (f.assento) {
             // sentado: só olha em volta
             novaPostura = POSTURA.SENTADO;
+            f.acumulado = 0;
         } else {
-            const agachar = (t.has("KeyC") || toq.agachado) && !paradoRef.current;
-            const correndo = (t.has("ShiftLeft") || t.has("ShiftRight")) && frente > 0 && !agachar;
-
-            // direção que você quer ir, no andar: frente = (-sen yaw, -cos yaw); direita = (cos yaw, -sen yaw)
-            let querX = 0;
-            let querZ = 0;
-            if (intensidade > 0.05) {
-                const norma = Math.hypot(frente, lado);
-                const fr = frente / norma;
-                const la = lado / norma;
-                const vel = (agachar ? AGACHADO : correndo ? CORRER : ANDAR) * intensidade;
-                querX = (-Math.sin(yaw) * fr + Math.cos(yaw) * la) * vel;
-                querZ = (-Math.cos(yaw) * fr - Math.sin(yaw) * la) * vel;
+            f.acumulado += dt;
+            while (f.acumulado >= TICK) {
+                const pular = !paradoRef.current && (querPular.current || (cfg.autoBhop && segurandoPulo));
+                querPular.current = false;
+                tick(TICK, frente, lado, agachar, devagar, pular && f.noChao);
+                f.acumulado -= TICK;
             }
-
-            // deslizar: agachar correndo (igual no CoD). A direção trava no começo
-            const velocidade = Math.hypot(f.vx, f.vz);
-            if (apertouAgachar && f.noChao && f.deslize <= 0 && velocidade > CORRER * 0.8) {
-                f.deslize = DESLIZE_S;
-                f.dirX = f.vx / velocidade;
-                f.dirZ = f.vz / velocidade;
-                f.velDeslize = velocidade + 2.2;
-            }
-
-            if (f.deslize > 0) {
-                f.deslize -= dt;
-                const resto = Math.max(0, f.deslize / DESLIZE_S);
-                const vel = AGACHADO + (f.velDeslize - AGACHADO) * resto * resto;
-                f.vx = f.dirX * vel;
-                f.vz = f.dirZ * vel;
-            } else if (f.noChao) {
-                f.vx = querX;
-                f.vz = querZ;
-            } else {
-                // no ar dá pra corrigir só um pouco
-                const ar = Math.min(1, dt * 2.5);
-                f.vx += (querX - f.vx) * ar;
-                f.vz += (querZ - f.vz) * ar;
-            }
-
-            // pular (pular no meio do deslize corta o deslize e mantém o embalo)
-            if (pular && f.noChao && !paradoRef.current) {
-                f.vy = PULO;
-                f.noChao = false;
-                f.deslize = 0;
-            }
-
-            // andar com colisão: degrau alto demais conta como parede
-            const pes = p.y;
-            const novo = moverComColisao(
-                p,
-                { x: p.x + f.vx * dt, z: p.z + f.vz * dt },
-                caixas(),
-                RAIO_JOGADOR,
-                (q) => alturaChao(planta.degraus, q) - pes <= DEGRAU_MAXIMO,
-            );
-            movendo = Math.hypot(novo.x - p.x, novo.z - p.z) > 0.001;
-            p.x = novo.x;
-            p.z = novo.z;
-
-            // chão e gravidade
-            const chao = alturaChao(planta.degraus, p);
-            if (f.noChao) {
-                // desce degrau pequeno colado no chão; mais alto que isso, cai
-                if (p.y - chao > DEGRAU_MAXIMO) {
-                    f.noChao = false;
-                    f.vy = 0;
-                } else {
-                    p.y = chao;
-                }
-            }
-            if (!f.noChao) {
-                f.vy -= GRAVIDADE * dt;
-                p.y += f.vy * dt;
-                if (p.y <= chao) {
-                    p.y = chao;
-                    f.vy = 0;
-                    f.noChao = true;
-                }
-            }
-
-            novaPostura = f.deslize > 0 ? POSTURA.DESLIZANDO : agachar ? POSTURA.AGACHADO : POSTURA.EM_PE;
+            novaPostura = agachar ? POSTURA.AGACHADO : POSTURA.EM_PE;
         }
+        velocidade.current = f.assento ? 0 : Math.hypot(f.vx, f.vz);
 
-        // ---------- câmera ----------
+        // ---------- câmera (entre o tick anterior e o atual) ----------
+        const alfa = f.assento ? 1 : f.acumulado / TICK;
+        const x = f.antes.x + (p.x - f.antes.x) * alfa;
+        const y = f.antes.y + (p.y - f.antes.y) * alfa;
+        const z = f.antes.z + (p.z - f.antes.z) * alfa;
         f.olhos += (OLHOS[novaPostura] - f.olhos) * Math.min(1, dt * 12);
-        const andando = movendo && f.noChao && novaPostura !== POSTURA.DESLIZANDO;
-        if (andando) f.passo += Math.hypot(f.vx, f.vz) * dt * 2.2;
-        const balanco = andando ? Math.sin(f.passo) * 0.035 : 0;
-        const alvoY = p.y + f.olhos + balanco;
+        const alvoY = y + f.olhos;
         // no chão suaviza (degrau não dá tranco); no ar segue direto
         f.cameraY = f.noChao ? f.cameraY + (alvoY - f.cameraY) * Math.min(1, dt * 18) : alvoY;
-        // deslizando, a câmera inclina um pouco
-        f.inclinacao += ((novaPostura === POSTURA.DESLIZANDO ? 0.06 : 0) - f.inclinacao) * Math.min(1, dt * 10);
-        camera.position.set(p.x, f.cameraY, p.z);
-        camera.rotation.set(olhar.current.pitch, olhar.current.yaw, f.inclinacao, "YXZ");
+        camera.position.set(x, f.cameraY, z);
+        camera.rotation.set(olhar.current.pitch, olhar.current.yaw, 0, "YXZ");
 
         p.rot = olhar.current.yaw;
         p.pitch = olhar.current.pitch;

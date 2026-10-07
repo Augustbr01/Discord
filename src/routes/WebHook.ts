@@ -1,11 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { receiver } from "../config/WebWookConfig";
 import {prisma} from "../../lib/prisma"
-import { entrouNaCall, participantesDaCall, saiuDaCall } from "../eventosCall";
+import { entrouNaCall, mudarTela, participantesDaCall, saiuDaCall } from "../eventosCall";
 import { estadoYoutube, limparYoutube } from "../youtube";
 import { estadoSala, limparSala } from "../controleSala";
 import { publicarParaServidor } from "./eventosConexao";
 import { ehSalaDoHall } from "../sincronizarCalls";
+import { statusTela } from "../interface/Evento";
+import { TrackSource } from "livekit-server-sdk";
 export const routeHook : (FastifyPluginAsyncTypebox) = async (fastify) => {
     fastify.post("/livekit/webhook", async (req,rep) => {
         console.log("entrou");
@@ -47,6 +49,18 @@ export const routeHook : (FastifyPluginAsyncTypebox) = async (fastify) => {
             if(participantesDaCall(canalId).length === 0 && limparSala(canalId)) {
                 await publicarParaServidor(servidor.id,{tipo:"SALA_ESTADO",estado:estadoSala(canalId)});
             }
+        }
+
+        const ehTela = evento.track?.source === TrackSource.SCREEN_SHARE;
+
+        if(evento.event === "track_published" && ehTela) {
+            mudarTela(canalId,usuarioId,true);
+            await publicarParaServidor(servidor.id,{tipo:"TELA",canalId:canalId,usuarioId:usuarioId,statusTela:statusTela.ABRIU});
+        }
+
+        if(evento.event === "track_unpublished" && ehTela) {
+            mudarTela(canalId,usuarioId,false);
+            await publicarParaServidor(servidor.id,{tipo:"TELA",canalId:canalId,usuarioId:usuarioId,statusTela:statusTela.FECHOU});
         }
 
         return rep.code(200).send();

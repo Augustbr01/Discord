@@ -1,20 +1,23 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
-import { DisconnectReason, ScreenSharePresets, VideoPresets, type MediaDeviceFailure, type RoomOptions } from "livekit-client";
-import { Bird, Building2, Hash, Loader2, LogOut, PhoneOff, Plus, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
+import { DisconnectReason, MediaDeviceFailure, ScreenSharePresets, VideoPresets, type RoomOptions } from "livekit-client";
+import { Bird, Building2, Camera, Hash, Loader2, LogOut, PhoneOff, Plus, Settings, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
 import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
 } from "./api";
 import { ChatSalaProvider } from "./contexto/ChatSala";
 import { ControleVozProvider } from "./contexto/ControleVoz";
+import { FocoChamadaProvider } from "./contexto/FocoChamada";
+import { PerfilProvider } from "./contexto/Perfil";
 import { ToastProvider, useToast } from "./contexto/Toasts";
 import { YoutubeSalaProvider } from "./contexto/YoutubeSala";
 import { ControleSalaProvider } from "./contexto/ControleSala";
-import { useServidor } from "./hooks/useServidor";
+import { removerMembro, useServidor } from "./hooks/useServidor";
+import { useSonsDeVoz } from "./hooks/useSonsDeVoz";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
-import { extrairIdConvite, lerArmazenado, salvarArmazenado } from "./lib/util";
+import { extrairIdConvite, lerArmazenado, removerArmazenado, salvarArmazenado } from "./lib/util";
 import type { MapaMembros, Voz } from "./tipos";
 import { BarraServidores } from "./components/BarraServidores";
 import { CanalTexto } from "./components/CanalTexto";
@@ -22,6 +25,9 @@ import { VistaVoz } from "./components/chamada/VistaVoz";
 import { ListaMembros } from "./components/ListaMembros";
 import { Login } from "./components/Login";
 import { Convidar } from "./components/modais/Convidar";
+import { EditarServidor } from "./components/modais/EditarServidor";
+import { ExpulsarMembro } from "./components/modais/ExpulsarMembro";
+import { FotoPerfil } from "./components/modais/FotoPerfil";
 import { NovoCanal } from "./components/modais/NovoCanal";
 import { NovoServidor, type AbaServidor } from "./components/modais/NovoServidor";
 import { PainelCanais } from "./components/PainelCanais";
@@ -33,7 +39,9 @@ import { Cabecalho } from "./components/ui/Cabecalho";
 // o 3D (three.js) só é baixado quando alguém abre o mundo
 const Mundo3D = lazy(() => import("./components/mundo/Mundo3D"));
 
-const CHAVE_CONVITE = "convitePendente";
+const CHAVE_CONVITE = "liberdade:convite";
+// tempo pra fazer o login e voltar com o convite ainda guardado
+const VALIDADE_CONVITE_MS = 60 * 60 * 1000;
 const CHAVE_SERVIDOR = "liberdade:servidor";
 const CHAVE_CANAIS = "liberdade:canais";
 const CHAVE_MEMBROS = "liberdade:membros";
@@ -54,20 +62,34 @@ const OPCOES_SALA: RoomOptions = {
     },
 };
 
+// nomes dos erros do navegador ao abrir microfone/câmera
+const ERROS_DE_DISPOSITIVO = new Set(["NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError", "AbortError"]);
+
 type ModalAberto =
     | { tipo: "servidor"; aba: AbaServidor }
     | { tipo: "convidar" }
     | { tipo: "canal"; tipoCanal: TipoCanal }
+    | { tipo: "foto" }
+    | { tipo: "editar-servidor" }
+    | { tipo: "expulsar"; usuario: Usuario }
     | null;
 
 // quem abre /convite/<id> sem estar logado passa pelo login e volta pra "/",
-// então o id fica guardado até dar pra usar
+// então o id fica guardado até dar pra usar. Fica no localStorage, que vale pra todas
+// as abas: o login do Discord pode voltar em outra (no celular, ele abre o app do Discord)
+type ConviteGuardado = { id: string; ate: number };
+
 function guardarConviteDaUrl() {
     const id = location.pathname.startsWith("/convite/") ? extrairIdConvite(location.pathname) : null;
     if (id) {
-        sessionStorage.setItem(CHAVE_CONVITE, id);
+        salvarArmazenado(CHAVE_CONVITE, { id, ate: Date.now() + VALIDADE_CONVITE_MS } satisfies ConviteGuardado);
         history.replaceState(null, "", "/");
     }
+}
+
+function convitePendente() {
+    const guardado = lerArmazenado<ConviteGuardado | null>(CHAVE_CONVITE, null);
+    return guardado && guardado.ate > Date.now() ? guardado.id : null;
 }
 
 export default function App() {
@@ -85,6 +107,8 @@ function Aplicacao() {
     const [eu, setEu] = useState<Usuario | null | undefined>(undefined);
     const [servidores, setServidores] = useState<ServidorResumo[] | null>(null);
     const [servidorId, setServidorId] = useState<string | null>(null);
+    // contagem de mensagens não lidas por servidor (o badge +1 na barra)
+    const [naoLidos, setNaoLidos] = useState<Record<string, number>>({});
     // último canal aberto em cada servidor (só os de texto são lembrados entre visitas)
     const [canalPorServidor, setCanalPorServidor] = useState<Record<string, string>>(() => lerArmazenado(CHAVE_CANAIS, {}));
     const [voz, setVoz] = useState<Voz | null>(null);
@@ -139,13 +163,63 @@ function Aplicacao() {
         return () => gateway.desconectar();
     }, [euId]);
 
+    // servidor aberto num ref: o ouvinte abaixo lê sempre o atual sem re-assinar
+    const servidorIdRef = useRef(servidorId);
+    useEffect(() => {
+        servidorIdRef.current = servidorId;
+    }, [servidorId]);
+
+    // mensagem nova num servidor que não estou vendo → +1 no badge daquele servidor
+    useEffect(() => {
+        if (!euId) return;
+        return gateway.assinar((evento) => {
+            if (evento.tipo !== "MENSAGEM_CRIADA") return;
+            if (evento.mensagem.autor.id === euId) return;        // não conta o que eu mandei
+            if (evento.servidorId === servidorIdRef.current) return; // já estou nesse servidor
+            setNaoLidos((n) => ({ ...n, [evento.servidorId]: (n[evento.servidorId] ?? 0) + 1 }));
+        });
+    }, [euId]);
+
+    // servidor renomeado (por você ou outro admin): atualiza o nome na lista de servidores.
+    // O servidor aberto se atualiza sozinho no useServidor
+    useEffect(() => {
+        if (!euId) return;
+        return gateway.assinar((evento) => {
+            if (evento.tipo !== "UPDATE_SERVER") return;
+            setServidores((lista) => lista && lista.map((s) => (s.id === evento.servidorId ? { ...s, nome: evento.nome } : s)));
+        });
+    }, [euId]);
+
+    // você foi expulso de um servidor: ele some da barra, a chamada de lá cai e você vai pra outro
+    const servidoresRef = useRef(servidores);
+    useEffect(() => {
+        servidoresRef.current = servidores;
+    }, [servidores]);
+
+    useEffect(() => {
+        if (!euId) return;
+        return gateway.assinar((evento) => {
+            if (evento.tipo !== "MEMBROS" || evento.usuarioId !== euId) return;
+            const daqui = evento.servidorId;
+            const lista = servidoresRef.current ?? [];
+            const nome = lista.find((s) => s.id === daqui)?.nome;
+            setServidores((atual) => atual && atual.filter((s) => s.id !== daqui));
+            setVoz((v) => (v && v.servidorId === daqui ? null : v));
+            if (servidorIdRef.current === daqui) setServidorId(lista.find((s) => s.id !== daqui)?.id ?? null);
+            toast.info(nome ? `Você foi removido de ${nome}.` : "Você foi removido de um servidor.");
+        });
+    }, [euId, toast]);
+
+    // som de entrada/saída na call em que você está (menos o seu próprio)
+    useSonsDeVoz(voz, eu);
+
     useEffect(() => {
         if (!euId) return;
         let ativo = true;
 
         (async () => {
-            const convite = sessionStorage.getItem(CHAVE_CONVITE);
-            sessionStorage.removeItem(CHAVE_CONVITE);
+            const convite = convitePendente();
+            removerArmazenado(CHAVE_CONVITE);
 
             let abrir: string | null = null;
             if (convite) {
@@ -212,6 +286,8 @@ function Aplicacao() {
         setServidorId(id);
         setMenuAberto(false);
         salvarArmazenado(CHAVE_SERVIDOR, id);
+        // abriu o servidor: zera o badge dele
+        setNaoLidos((n) => (n[id] ? { ...n, [id]: 0 } : n));
     }, []);
 
     const selecionarCanal = useCallback((idServidor: string, canal: Canal) => {
@@ -324,17 +400,27 @@ function Aplicacao() {
             toast.erro("Não foi possível conectar à sala de voz.");
             return;
         }
-        // permissão de microfone/câmera negada já é avisada pelo onMediaDeviceFailure
-        if (err.name === "NotAllowedError" || err.name === "NotFoundError") return;
+        // falha de microfone/câmera (sem permissão, sem aparelho, em uso por outro programa)
+        // já é avisada pelo onMediaDeviceFailure
+        if (ERROS_DE_DISPOSITIVO.has(err.name)) return;
         toast.erro(err.message);
     }, [toast]);
 
-    const aoFalharDispositivo = useCallback((_falha?: MediaDeviceFailure, tipo?: MediaDeviceKind) => {
-        toast.erro(
-            tipo === "videoinput"
-                ? "Não consegui acessar a câmera. Confira as permissões do navegador."
-                : "Não consegui acessar o microfone. Confira as permissões do navegador.",
-        );
+    // único lugar que avisa falha de câmera/microfone (os botões só desfazem o estado)
+    const aoFalharDispositivo = useCallback((falha?: MediaDeviceFailure, tipo?: MediaDeviceKind) => {
+        // sem tipo = compartilhamento de tela: quem avisa é o botão da tela,
+        // e fechar a janela de escolher a tela nem é erro
+        if (tipo !== "audioinput" && tipo !== "videoinput") return;
+        const [oDispositivo, dispositivo] = tipo === "videoinput" ? ["a câmera", "câmera"] : ["o microfone", "microfone"];
+        if (falha === MediaDeviceFailure.PermissionDenied) {
+            toast.erro(`Sem permissão pra usar ${oDispositivo}. Libere nas configurações do navegador.`);
+        } else if (falha === MediaDeviceFailure.NotFound) {
+            toast.erro(`Nenhum${tipo === "videoinput" ? "a" : ""} ${dispositivo} encontrad${tipo === "videoinput" ? "a" : "o"}.`);
+        } else if (falha === MediaDeviceFailure.DeviceInUse) {
+            toast.erro(`${oDispositivo[0].toUpperCase()}${oDispositivo.slice(1)} está sendo usad${tipo === "videoinput" ? "a" : "o"} por outro programa.`);
+        } else {
+            toast.erro(`Não consegui acessar ${oDispositivo}. Confira as permissões do navegador.`);
+        }
     }, [toast]);
 
     // ---------- respostas dos modais ----------
@@ -353,6 +439,44 @@ function Aplicacao() {
         setModal(null);
         // abre o canal novo (numa sala de voz, abre a tela dela sem entrar sozinho)
         selecionarCanal(servidor.id, novo);
+    }
+
+    function aoEditarServidor(atualizado: { id: string; nome: string }) {
+        // atualiza na hora pra quem editou; o UPDATE_SERVER chega pros outros (e pra você também, sem efeito)
+        setServidores((lista) => lista && lista.map((s) => (s.id === atualizado.id ? { ...s, nome: atualizado.nome } : s)));
+        setServidor((s) => (s && s.id === atualizado.id ? { ...s, nome: atualizado.nome } : s));
+        setModal(null);
+        toast.sucesso("Servidor atualizado");
+    }
+
+    // igual à regra do back: admin expulsa só membro comum (os outros admins e você ficam de fora).
+    // O dono sempre é ADMIN, mas fica protegido pelo id também, por garantia
+    function podeExpulsar(alvo: Usuario) {
+        if (!servidor || !eu || !souAdmin || alvo.id === eu.id || alvo.id === servidor.dono.id) return false;
+        return servidor.membros.some((m) => m.usuario.id === alvo.id && m.permissao !== "ADMIN");
+    }
+
+    // o erro sobe pro modal mostrar; deu certo: some da lista na hora (o evento chega depois)
+    async function expulsar(usuario: Usuario) {
+        if (!servidor) return;
+        const idServidor = servidor.id;
+        await api.expulsarMembro(idServidor, usuario.id);
+        setServidor((s) => (s && s.id === idServidor ? removerMembro(s, usuario.id) : s));
+        setModal(null);
+        toast.sucesso(`Você expulsou ${usuario.nome} do servidor.`);
+    }
+
+    function aoTrocarFoto(atualizado: Usuario, removida: boolean) {
+        const trocar = (u: Usuario) => (u.id === atualizado.id ? { ...u, avatarUrl: atualizado.avatarUrl } : u);
+        setEu((u) => u && trocar(u));
+        // você também aparece no servidor aberto: lista de membros e salas de voz
+        setServidor((s) => s && {
+            ...s,
+            membros: s.membros.map((m) => ({ ...m, usuario: trocar(m.usuario) })),
+            canais: s.canais.map((c) => (c.participantes ? { ...c, participantes: c.participantes.map(trocar) } : c)),
+        });
+        setModal(null);
+        toast.sucesso(removida ? "Foto de perfil removida" : "Foto de perfil atualizada");
     }
 
     const apagarCanal = useCallback(async (canal: Canal) => {
@@ -407,6 +531,7 @@ function Aplicacao() {
             { id: "convidar", grupo: "Ações", titulo: "Convidar pessoas", dica: servidor.nome, icone: <UserPlus size={16} />, acao: () => setModal({ tipo: "convidar" }) },
             { id: "novo-canal", grupo: "Ações", titulo: "Criar canal de texto", dica: servidor.nome, icone: <Hash size={16} />, acao: () => setModal({ tipo: "canal", tipoCanal: "TEXTO" }) },
             { id: "nova-sala", grupo: "Ações", titulo: "Criar sala de voz", dica: servidor.nome, icone: <Volume2 size={16} />, acao: () => setModal({ tipo: "canal", tipoCanal: "VOZ" }) },
+            { id: "editar-servidor", grupo: "Ações", titulo: "Editar servidor", dica: servidor.nome, icone: <Settings size={16} />, acao: () => setModal({ tipo: "editar-servidor" }) },
         );
     }
     itensPaleta.push(
@@ -433,7 +558,10 @@ function Aplicacao() {
     if (voz) {
         itensPaleta.push({ id: "sair-sala", grupo: "Ações", titulo: "Sair da sala de voz", dica: voz.canal.nome, icone: <PhoneOff size={16} />, acao: sairDaVoz });
     }
-    itensPaleta.push({ id: "sair-conta", grupo: "Ações", titulo: "Sair da conta", icone: <LogOut size={16} />, acao: sairDaConta });
+    itensPaleta.push(
+        { id: "foto-perfil", grupo: "Ações", titulo: "Alterar foto de perfil", icone: <Camera size={16} />, acao: () => setModal({ tipo: "foto" }) },
+        { id: "sair-conta", grupo: "Ações", titulo: "Sair da conta", icone: <LogOut size={16} />, acao: sairDaConta },
+    );
 
     // ---------- telas ----------
 
@@ -447,7 +575,7 @@ function Aplicacao() {
     }
 
     if (eu === null) {
-        return <Login />;
+        return <Login convidado={convitePendente() !== null} />;
     }
 
     const abrirMenu = () => setMenuAberto(true);
@@ -525,87 +653,116 @@ function Aplicacao() {
                 surdo={surdo}
                 setSurdo={setSurdo}
                 audioEspacial={mundoAberto}
+                cinema={voz?.canal.modelo === "CINEMA"}
             >
                 <ChatSalaProvider desde={voz?.desde ?? null}>
-                    <YoutubeSalaProvider canalId={voz ? voz.canal.id : null} noMundo={mundoAberto}>
-                        <ControleSalaProvider canalId={voz ? voz.canal.id : null}>
-                            <div className="navegacao">
-                                <BarraServidores
-                                    servidores={servidores ?? []}
-                                    atualId={servidorId}
-                                    servidorDaChamada={voz?.servidorId ?? null}
-                                    onEscolher={irParaServidor}
-                                    onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
-                                />
-                                <PainelCanais
-                                    servidor={servidor}
-                                    carregando={servidores === null || (!!servidorId && !servidor)}
-                                    canalAtualId={canalAtual?.id ?? null}
-                                    voz={voz}
-                                    entrandoEm={entrandoEm}
-                                    eu={eu}
-                                    souAdmin={souAdmin}
-                                    membros={membros}
-                                    onCanal={abrirCanal}
-                                    onApagarCanal={apagarCanal}
-                                    onConvidar={() => setModal({ tipo: "convidar" })}
-                                    onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
-                                    onAbrirChamada={abrirChamada}
-                                    onSairChamada={sairDaVoz}
-                                    onSairConta={sairDaConta}
-                                    onMundo3D={() => {
-                                        setMenuAberto(false);
-                                        setMundoAberto(true);
-                                    }}
-                                />
-                            </div>
+                    <FocoChamadaProvider desde={voz?.desde ?? null}>
+                        <PerfilProvider
+                            eu={eu}
+                            membros={membros}
+                            servidorId={servidorId}
+                            onEditarFoto={() => setModal({ tipo: "foto" })}
+                            podeExpulsar={podeExpulsar}
+                            onExpulsar={(usuario) => setModal({ tipo: "expulsar", usuario })}
+                        >
+                            <YoutubeSalaProvider canalId={voz ? voz.canal.id : null} noMundo={mundoAberto}>
+                                <ControleSalaProvider canalId={voz ? voz.canal.id : null}>
+                                    <div className="navegacao">
+                                        <BarraServidores
+                                            servidores={servidores ?? []}
+                                            atualId={servidorId}
+                                            servidorDaChamada={voz?.servidorId ?? null}
+                                            naoLidos={naoLidos}
+                                            onEscolher={irParaServidor}
+                                            onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
+                                        />
+                                        <PainelCanais
+                                            servidor={servidor}
+                                            carregando={servidores === null || (!!servidorId && !servidor)}
+                                            canalAtualId={canalAtual?.id ?? null}
+                                            voz={voz}
+                                            entrandoEm={entrandoEm}
+                                            eu={eu}
+                                            souAdmin={souAdmin}
+                                            membros={membros}
+                                            onCanal={abrirCanal}
+                                            onApagarCanal={apagarCanal}
+                                            onConvidar={() => setModal({ tipo: "convidar" })}
+                                            onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
+                                            onEditarServidor={() => setModal({ tipo: "editar-servidor" })}
+                                            onAbrirChamada={abrirChamada}
+                                            onSairChamada={sairDaVoz}
+                                            onEditarFoto={() => setModal({ tipo: "foto" })}
+                                            onSairConta={sairDaConta}
+                                            onMundo3D={() => {
+                                                setMenuAberto(false);
+                                                setMundoAberto(true);
+                                            }}
+                                        />
+                                    </div>
 
-                            {menuAberto && <div className="fundo-escuro" onClick={() => setMenuAberto(false)} />}
+                                    {menuAberto && <div className="fundo-escuro" onClick={() => setMenuAberto(false)} />}
 
-                            <main className="principal">{conteudo}</main>
+                                    <main className="principal">{conteudo}</main>
 
-                            {mostrarMembros && servidor && (
-                                <>
-                                    <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
-                                    <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
-                                </>
-                            )}
+                                    {mostrarMembros && servidor && (
+                                        <>
+                                            <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
+                                            <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
+                                        </>
+                                    )}
 
-                            {modal?.tipo === "servidor" && (
-                                <NovoServidor abaInicial={modal.aba} onFechar={() => setModal(null)} onPronto={aoCriarOuEntrarServidor} />
-                            )}
-                            {modal?.tipo === "convidar" && servidor && (
-                                <Convidar servidor={servidor} onFechar={() => setModal(null)} />
-                            )}
-                            {modal?.tipo === "canal" && servidor && (
-                                <NovoCanal
-                                    servidorId={servidor.id}
-                                    tipoInicial={modal.tipoCanal}
-                                    onFechar={() => setModal(null)}
-                                    onCriado={aoCriarCanal}
-                                />
-                            )}
-                            {mundoAberto && (
-                                <Suspense fallback={<MundoCarregando />}>
-                                    <Mundo3D
-                                        servidor={servidor}
-                                        servidores={servidores ?? []}
-                                        eu={eu}
-                                        membros={membros}
-                                        voz={voz}
-                                        entrandoEm={entrandoEm}
-                                        onEntrarSala={abrirCanal}
-                                        onSairSala={sairDaVoz}
-                                        onEntrarHall={entrarNoHall}
-                                        onTrocarAndar={irParaServidor}
-                                    onMembroDesconhecido={recarregarServidor}
-                                        onFechar={fecharMundo}
-                                    />
-                                </Suspense>
-                            )}
-                            {paletaAberta && <Paleta itens={itensPaleta} onFechar={() => setPaletaAberta(false)} />}
-                        </ControleSalaProvider>
-                    </YoutubeSalaProvider>
+                                    {modal?.tipo === "servidor" && (
+                                        <NovoServidor abaInicial={modal.aba} onFechar={() => setModal(null)} onPronto={aoCriarOuEntrarServidor} />
+                                    )}
+                                    {modal?.tipo === "convidar" && servidor && (
+                                        <Convidar servidor={servidor} onFechar={() => setModal(null)} />
+                                    )}
+                                    {modal?.tipo === "canal" && servidor && (
+                                        <NovoCanal
+                                            servidorId={servidor.id}
+                                            tipoInicial={modal.tipoCanal}
+                                            onFechar={() => setModal(null)}
+                                            onCriado={aoCriarCanal}
+                                        />
+                                    )}
+                                    {modal?.tipo === "expulsar" && servidor && (
+                                        <ExpulsarMembro
+                                            usuario={modal.usuario}
+                                            servidorNome={servidor.nome}
+                                            onFechar={() => setModal(null)}
+                                            onConfirmar={() => expulsar(modal.usuario)}
+                                        />
+                                    )}
+                                    {modal?.tipo === "editar-servidor" && servidor && (
+                                        <EditarServidor servidor={servidor} onFechar={() => setModal(null)} onSalvo={aoEditarServidor} />
+                                    )}
+                                    {modal?.tipo === "foto" && (
+                                        <FotoPerfil eu={eu} onFechar={() => setModal(null)} onPronto={aoTrocarFoto} />
+                                    )}
+                                    {mundoAberto && (
+                                        <Suspense fallback={<MundoCarregando />}>
+                                            <Mundo3D
+                                                servidor={servidor}
+                                                servidores={servidores ?? []}
+                                                eu={eu}
+                                                membros={membros}
+                                                voz={voz}
+                                                entrandoEm={entrandoEm}
+                                                onEntrarSala={abrirCanal}
+                                                onSairSala={sairDaVoz}
+                                                onEntrarHall={entrarNoHall}
+                                                onTrocarAndar={irParaServidor}
+                                                onMembroDesconhecido={recarregarServidor}
+                                                onFechar={fecharMundo}
+                                            />
+                                        </Suspense>
+                                    )}
+                                    {paletaAberta && <Paleta itens={itensPaleta} onFechar={() => setPaletaAberta(false)} />}
+                                </ControleSalaProvider>
+                            </YoutubeSalaProvider>
+                        </PerfilProvider>
+                    </FocoChamadaProvider>
                 </ChatSalaProvider>
             </ControleVozProvider>
         </LiveKitRoom>

@@ -1,16 +1,25 @@
 import { roomService } from "./config/RoomService";
 
-const calls = new Map<string, Set<string>>()
+interface ParticipanteCall {
+    usuarioId : string,
+    mostrandoTela: boolean
+}
+
+
+const calls = new Map<string, Map<string,ParticipanteCall>>()
 
 export function entrouNaCall(canalId: string, usuarioId: string) {
-    const set = calls.get(canalId) ?? new Set<string>();
+    const set = calls.get(canalId) ?? new Map<string,ParticipanteCall>();
 
-    set.add(usuarioId);
+    if(!set.has(usuarioId)) {
+        set.set(usuarioId,{usuarioId:usuarioId,mostrandoTela:false});
+    }
+
     calls.set(canalId,set);
 }
 
 export function saiuDaCall(canalId: string, usuarioId: string) {
-    const set = calls.get(canalId); 
+    const set = calls.get(canalId);
 
     set?.delete(usuarioId);
 
@@ -23,7 +32,7 @@ export function canaisComGente() {
 }
 
 export function participantesDaCall(canalId: string) {
-    return [...(calls.get(canalId) ?? [])];
+    return [...(calls.get(canalId)?.keys() ?? [])];
 }
 
 // a lista acima vem dos webhooks do LiveKit e some quando o servidor reinicia (ou fica
@@ -36,4 +45,14 @@ export async function estaNaCall(canalId: string, usuarioId: string) {
 
 export function limparCall(canalId: string) {
     calls.delete(canalId);
+}
+
+export function mudarTela(canalId: string,usuarioId: string,mostrandoTela: boolean) {
+    const participante = calls.get(canalId)?.get(usuarioId);
+
+    if(participante) participante.mostrandoTela = mostrandoTela;
+}
+
+export function telasDaCall(canalId: string) {
+    return [...(calls.get(canalId)?.values() ?? [])].filter((p) => p.mostrandoTela).map((p) => p.usuarioId);
 }

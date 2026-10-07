@@ -153,6 +153,25 @@
     box-shadow: 0 0 0 3px var(--fundo-0);
 }
 
+/* badge de mensagens não lidas no ícone do servidor */
+.barra-badge {
+    position: absolute;
+    top: -2px;
+    right: 11px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--perigo);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 0 0 3px var(--fundo-0);
+}
+
 .icone-adicionar {
     width: 40px;
     height: 40px;
@@ -359,11 +378,49 @@
     color: var(--texto);
 }
 
+/* foto + nome de quem está na sala: abre o perfil */
+.voz-pessoa-quem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    text-align: left;
+}
+
+/* ícones e "ao vivo" nunca encolhem: quem encolhe (com reticências) é o nome */
 .voz-pessoa-estado {
     display: flex;
+    flex-shrink: 0;
+    align-items: center;
     gap: 4px;
     margin-left: auto;
     color: var(--texto-3);
+}
+
+.voz-pessoa-estado svg {
+    flex-shrink: 0;
+}
+
+/* quem está compartilhando a tela: clicar abre a chamada assistindo */
+.voz-ao-vivo {
+    flex-shrink: 0;
+    height: 18px;
+    white-space: nowrap;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--texto);
+    color: var(--fundo-0);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transition: background 0.12s;
+}
+
+.voz-ao-vivo:hover {
+    background: #d4d4d8;
 }
 
 .esqueleto-canais {
@@ -474,8 +531,29 @@
     border-top: 1px solid var(--borda);
 }
 
-.painel-usuario > .avatar {
+.painel-usuario-foto {
+    position: relative;
+    display: grid;
     margin-right: 8px;
+    border-radius: 50%;
+}
+
+/* câmera por cima da foto ao passar o mouse: mostra que dá pra trocar */
+.painel-usuario-foto-camada {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--texto);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.painel-usuario-foto:hover .painel-usuario-foto-camada,
+.painel-usuario-foto:focus-visible .painel-usuario-foto-camada {
+    opacity: 1;
 }
 
 .painel-usuario-texto {
@@ -565,12 +643,15 @@
     padding: 4px 8px 6px;
 }
 
+/* a linha inteira é um botão: abre o perfil */
 .membro {
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
     padding: 6px 8px;
     border-radius: 6px;
+    text-align: left;
 }
 
 .membro:hover {

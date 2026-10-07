@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type RefObject } from "react";
 import { VideoTrack, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
 import { Track } from "livekit-client";
-import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Tablet, X } from "lucide-react";
+import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Settings, Tablet, X } from "lucide-react";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
 import { fonteDaTV, useControleSala } from "../../contexto/ControleSala";
 import { useControleVoz } from "../../contexto/ControleVoz";
@@ -17,6 +17,8 @@ import { Controles } from "../chamada/Controles";
 import { IconeServidor } from "../ui/Avatar";
 import { PainelControle } from "../controle/PainelControle";
 import type { SomDaTV } from "./AudioEspacial";
+import { useConfigMundo } from "./config";
+import { ConfigMundo, Velocimetro } from "./ConfigMundo";
 import { CanvasMundo, Cena, criarTunel, type Pessoa, type Tunel } from "./Cena";
 import type { YoutubeNaTV } from "./Predio";
 import type { ControleToque, PedidoJogador } from "./Jogador";
@@ -151,6 +153,9 @@ function Andar({
     useEffect(() => {
         pose.current.item = controleAberto ? ITEM.TABLET : ITEM.NADA;
     }, [controleAberto]);
+    const config = useConfigMundo();
+    const velocidade = useRef(0);
+    const [configAberta, setConfigAberta] = useState(false);
     const [telaCheia, setTelaCheia] = useState(false);
     const [toqueAtivo] = useState(ehToque);
 
@@ -391,10 +396,15 @@ function Andar({
                 e.preventDefault();
                 acoes.current.t();
             }
+            if (e.code === "KeyO") {
+                e.preventDefault();
+                setConfigAberta((v) => !v);
+            }
             if (e.code === "Escape") {
                 setSeletorAberto(false);
                 setTelaCheia(false);
                 setControleAberto(null);
+                setConfigAberta(false);
             }
         };
         window.addEventListener("keydown", aoTeclar);
@@ -414,7 +424,7 @@ function Andar({
         trocando.current = window.setTimeout(() => onTrocarAndar(id), 900);
     }
 
-    const parado = seletorAberto || telaCheia;
+    const parado = seletorAberto || telaCheia || configAberta;
     const canalChat = chatId ? canais.get(chatId) : undefined;
     const lugar = noCanal
         ? `${noCanal.nome}${vozNoAndar === noCanal.id ? " · na call" : ""}`
@@ -449,6 +459,7 @@ function Andar({
                     onSala={aoMudarSala}
                     onFoco={setFoco}
                     onTravado={setTravado}
+                    velocidade={velocidade}
                 />
             </tunel.In>
 
@@ -462,14 +473,19 @@ function Andar({
                 </div>
 
                 {travado && <span className="mundo-mira" />}
+                {config.mostrarVelocidade && <Velocimetro velocidade={velocidade} />}
+
+                <button className="mundo-config-botao" onClick={() => setConfigAberta(true)} aria-label="Configurações (O)" title="Configurações (O)">
+                    <Settings size={18} />
+                </button>
 
                 {!travado && !toqueAtivo && !parado && !canalChat && !controleAberto && (
                     <div className="mundo-ajuda">
                         <strong>Clique para andar</strong>
                         <span>
-                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> correr · <kbd>Espaço</kbd> pular · <kbd>C</kbd> agachar
+                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>C</kbd> agachar
                             <br />
-                            correndo + <kbd>C</kbd> desliza · <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>Esc</kbd> soltar o mouse
+                            <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>O</kbd> configurações · <kbd>Esc</kbd> soltar o mouse
                         </span>
                     </div>
                 )}
@@ -493,7 +509,7 @@ function Andar({
 
                 {voz && (
                     <div className="mundo-controles">
-                        <Controles onSair={onSairSala} cinema={voz.canal.modelo === "CINEMA"} />
+                        <Controles onSair={onSairSala} />
                     </div>
                 )}
             </div>
@@ -561,6 +577,8 @@ function Andar({
                     </div>
                 </div>
             )}
+
+            {configAberta && <ConfigMundo onFechar={() => setConfigAberta(false)} />}
 
             {seletorAberto && (
                 <div className="mundo-modal" onClick={() => setSeletorAberto(false)}>

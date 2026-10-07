@@ -1,5 +1,6 @@
 import { Crown, Volume2 } from "lucide-react";
 import type { Membro, ServidorDetalhe, Usuario } from "../api";
+import { usePerfil } from "../contexto/Perfil";
 import { Avatar } from "./ui/Avatar";
 import { Dica } from "./ui/Dica";
 
@@ -26,6 +27,7 @@ export function ListaMembros({ servidor, eu, emChamada }: Props) {
 type GrupoProps = { titulo: string; membros: Membro[]; donoId: string; eu: Usuario; emChamada: Map<string, string> };
 
 function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
+    const { abrirPerfil } = usePerfil();
     if (membros.length === 0) return null;
 
     return (
@@ -34,7 +36,12 @@ function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
             {membros.map(({ usuario }) => {
                 const sala = emChamada.get(usuario.id);
                 return (
-                    <div key={usuario.id} className="membro">
+                    <button
+                        key={usuario.id}
+                        className="membro"
+                        onClick={(e) => abrirPerfil(usuario, e.currentTarget)}
+                        aria-haspopup="dialog"
+                    >
                         <Avatar nome={usuario.nome} url={usuario.avatarUrl} tamanho={32} />
                         <div className="membro-texto">
                             <span className="membro-nome">
@@ -53,7 +60,7 @@ function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
                                 usuario.id === eu.id && <span className="membro-status">Você</span>
                             )}
                         </div>
-                    </div>
+                    </button>
                 );
             })}
         </section>

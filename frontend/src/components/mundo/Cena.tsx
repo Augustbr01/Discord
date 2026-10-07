@@ -56,6 +56,8 @@ type Props = {
     onFoco: (it: Interativo | null) => void;
     onTravado: (travado: boolean) => void;
     onPostura: (postura: number) => void;
+    // velocidade no chão, pro velocímetro
+    velocidade: RefObject<number>;
 };
 
 export type Tunel = ReturnType<typeof tunnel>;
@@ -176,6 +178,7 @@ export function Cena(props: Props) {
                 onFoco={props.onFoco}
                 onTravado={props.onTravado}
                 onPostura={props.onPostura}
+                velocidade={props.velocidade}
             />
             <AudioEspacial sala={props.sala} posicoes={props.posicoes} surdo={props.surdo} tv={props.somTV} proximidade={props.proximidade} />
         </>
