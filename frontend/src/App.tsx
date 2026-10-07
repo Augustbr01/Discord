@@ -11,7 +11,7 @@ import { ControleVozProvider } from "./contexto/ControleVoz";
 import { FocoChamadaProvider } from "./contexto/FocoChamada";
 import { PerfilProvider } from "./contexto/Perfil";
 import { ToastProvider, useToast } from "./contexto/Toasts";
-import { useServidor } from "./hooks/useServidor";
+import { removerMembro, useServidor } from "./hooks/useServidor";
 import { useSonsDeVoz } from "./hooks/useSonsDeVoz";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
@@ -24,6 +24,7 @@ import { ListaMembros } from "./components/ListaMembros";
 import { Login } from "./components/Login";
 import { Convidar } from "./components/modais/Convidar";
 import { EditarServidor } from "./components/modais/EditarServidor";
+import { ExpulsarMembro } from "./components/modais/ExpulsarMembro";
 import { FotoPerfil } from "./components/modais/FotoPerfil";
 import { NovoCanal } from "./components/modais/NovoCanal";
 import { NovoServidor, type AbaServidor } from "./components/modais/NovoServidor";
@@ -65,6 +66,7 @@ type ModalAberto =
     | { tipo: "canal"; tipoCanal: TipoCanal }
     | { tipo: "foto" }
     | { tipo: "editar-servidor" }
+    | { tipo: "expulsar"; usuario: Usuario }
     | null;
 
 // quem abre /convite/<id> sem estar logado passa pelo login e volta pra "/",
@@ -183,6 +185,26 @@ function Aplicacao() {
             setServidores((lista) => lista && lista.map((s) => (s.id === evento.servidorId ? { ...s, nome: evento.nome } : s)));
         });
     }, [euId]);
+
+    // você foi expulso de um servidor: ele some da barra, a chamada de lá cai e você vai pra outro
+    const servidoresRef = useRef(servidores);
+    useEffect(() => {
+        servidoresRef.current = servidores;
+    }, [servidores]);
+
+    useEffect(() => {
+        if (!euId) return;
+        return gateway.assinar((evento) => {
+            if (evento.tipo !== "MEMBROS" || evento.usuarioId !== euId) return;
+            const daqui = evento.servidorId;
+            const lista = servidoresRef.current ?? [];
+            const nome = lista.find((s) => s.id === daqui)?.nome;
+            setServidores((atual) => atual && atual.filter((s) => s.id !== daqui));
+            setVoz((v) => (v && v.servidorId === daqui ? null : v));
+            if (servidorIdRef.current === daqui) setServidorId(lista.find((s) => s.id !== daqui)?.id ?? null);
+            toast.info(nome ? `Você foi removido de ${nome}.` : "Você foi removido de um servidor.");
+        });
+    }, [euId, toast]);
 
     // som de entrada/saída na call em que você está (menos o seu próprio)
     useSonsDeVoz(voz, eu);
@@ -381,6 +403,23 @@ function Aplicacao() {
         toast.sucesso("Servidor atualizado");
     }
 
+    // igual à regra do back: admin expulsa só membro comum (os outros admins e você ficam de fora).
+    // O dono sempre é ADMIN, mas fica protegido pelo id também, por garantia
+    function podeExpulsar(alvo: Usuario) {
+        if (!servidor || !eu || !souAdmin || alvo.id === eu.id || alvo.id === servidor.dono.id) return false;
+        return servidor.membros.some((m) => m.usuario.id === alvo.id && m.permissao !== "ADMIN");
+    }
+
+    // o erro sobe pro modal mostrar; deu certo: some da lista na hora (o evento chega depois)
+    async function expulsar(usuario: Usuario) {
+        if (!servidor) return;
+        const idServidor = servidor.id;
+        await api.expulsarMembro(idServidor, usuario.id);
+        setServidor((s) => (s && s.id === idServidor ? removerMembro(s, usuario.id) : s));
+        setModal(null);
+        toast.sucesso(`Você expulsou ${usuario.nome} do servidor.`);
+    }
+
     function aoTrocarFoto(atualizado: Usuario, removida: boolean) {
         const trocar = (u: Usuario) => (u.id === atualizado.id ? { ...u, avatarUrl: atualizado.avatarUrl } : u);
         setEu((u) => u && trocar(u));
@@ -563,6 +602,8 @@ function Aplicacao() {
                             membros={membros}
                             servidorId={servidorId}
                             onEditarFoto={() => setModal({ tipo: "foto" })}
+                            podeExpulsar={podeExpulsar}
+                            onExpulsar={(usuario) => setModal({ tipo: "expulsar", usuario })}
                         >
                             <div className="navegacao">
                                 <BarraServidores
@@ -619,7 +660,15 @@ function Aplicacao() {
                                     onCriado={aoCriarCanal}
                                 />
                             )}
-                            {modal?.tipo === "editar-servidor" && servidor && (
+                            {modal?.tipo === "expulsar" && servidor && (
+                            <ExpulsarMembro
+                                usuario={modal.usuario}
+                                servidorNome={servidor.nome}
+                                onFechar={() => setModal(null)}
+                                onConfirmar={() => expulsar(modal.usuario)}
+                            />
+                        )}
+                        {modal?.tipo === "editar-servidor" && servidor && (
                                 <EditarServidor servidor={servidor} onFechar={() => setModal(null)} onSalvo={aoEditarServidor} />
                             )}
                             {modal?.tipo === "foto" && (

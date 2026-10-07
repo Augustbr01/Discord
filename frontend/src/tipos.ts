@@ -22,6 +22,9 @@ export type EventoGateway =
     | { tipo: "CANAL_CRIADO"; servidorId: string; canal: Canal }
     | { tipo: "CANAL_APAGADO"; servidorId: string; canalId: string }
     | { tipo: "UPDATE_SERVER"; servidorId: string; nome: string }
+    // alguém saiu da lista de membros (por enquanto só expulsão). usuarioId diz quem;
+    // sem ele, o front só consegue rebuscar a lista inteira
+    | { tipo: "MEMBROS"; servidorId: string; acao: "EXPULSO"; usuarioId?: string }
     | { tipo: "MENSAGEM_CRIADA"; servidorId: string; canalId: string; mensagem: Mensagem }
     | { tipo: "MENSAGEM_EDITADA"; servidorId: string; canalId: string; mensagem: Mensagem }
     | { tipo: "MENSAGEM_DELETADA"; servidorId: string; canalId: string; mensagem: { id: string } }

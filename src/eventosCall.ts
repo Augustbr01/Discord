@@ -1,5 +1,3 @@
-import { Partial } from "@fastify/type-provider-typebox";
-
 interface ParticipanteCall {
     usuarioId : string,
     mostrandoTela: boolean

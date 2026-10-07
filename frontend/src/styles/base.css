@@ -196,6 +196,16 @@ kbd {
     background: #ef5f64;
 }
 
+/* a mesma ação perigosa, mas discreta (ex.: no cartão de perfil) */
+.botao-perigo-contorno {
+    border: 1px solid rgba(229, 72, 77, 0.35);
+    color: var(--perigo);
+}
+
+.botao-perigo-contorno:hover:not(:disabled) {
+    background: var(--perigo-suave);
+}
+
 .botao-grande {
     height: 44px;
     padding: 0 20px;

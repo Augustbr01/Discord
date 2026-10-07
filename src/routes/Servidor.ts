@@ -2,8 +2,9 @@ import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typ
 import {prisma} from "../../lib/prisma"
 import { Permissao,TipoCanal } from "../../generated/prisma/enums";
 import { limparCall, participantesDaCall, telasDaCall } from "../eventosCall";
-import { publicarParaServidor } from "./eventosConexao";
+import { publicarParaServidor, publicarParaUsuarios } from "./eventosConexao";
 import { roomService } from "../config/RoomService";
+import { AcaoUsuario } from "../interface/Evento";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
     fastify.addHook("onRequest", async (req,rep) => {
@@ -224,6 +225,26 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         }})
 
         return rep.code(200).send(convite);
+    })
+
+    fastify.post("/expulsar/membro",{schema: {body: Type.Object({idServidor:Type.String(),idMembro: Type.String()})}},async (req,rep) => {
+        const {idServidor,idMembro} = req.body;
+        const idUsuario = req.user.id;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where:{usuarioId_servidorId: {usuarioId:idUsuario,servidorId:idServidor},permissao: Permissao.ADMIN}});
+
+        if(!isAdmin) {
+            return rep.code(401).send({mensagem:"Acesso não permitido"});
+        }
+
+        try {
+            await prisma.usuarioServidor.delete({where:{usuarioId_servidorId:{usuarioId:idMembro,servidorId:idServidor},permissao: {not: Permissao.ADMIN}}});
+            await publicarParaServidor(idServidor,{tipo:"MEMBROS",servidorId:idServidor,usuarioId:idMembro,acao: AcaoUsuario.EXPULSO});
+            await publicarParaUsuarios([idMembro],{tipo:"MEMBROS",servidorId:idServidor,usuarioId:idMembro,acao: AcaoUsuario.EXPULSO});
+            return rep.code(204).send({ok:true});
+        }catch(e) {
+            return rep.code(400).send({mensagem:"Não foi possível remover o membro!"});
+        }
     })
 
     fastify.post("/servidor/sala-criar", {schema: {body: Type.Object({servidorId: Type.String(),tipoSala: Type.Enum(TipoCanal),nomeCanal: Type.String({minLength: 1, maxLength: 50})})}},async (req,rep) => {

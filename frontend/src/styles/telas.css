@@ -475,6 +475,35 @@
     color: var(--texto-3);
 }
 
+/* ---------- expulsar membro ---------- */
+
+.expulsar-quem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--fundo-1);
+    border: 1px solid var(--borda-2);
+}
+
+.expulsar-quem div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.expulsar-quem strong {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.expulsar-quem span {
+    font-size: 13px;
+    color: var(--texto-3);
+}
+
 /* ---------- busca rápida ---------- */
 
 .paleta-fundo {

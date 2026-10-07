@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, Camera } from "lucide-react";
+import { CalendarDays, Camera, UserMinus } from "lucide-react";
 import type { Usuario } from "../api";
 import { avatarReal } from "../lib/util";
 import { Avatar } from "./ui/Avatar";
@@ -14,6 +14,8 @@ type Props = {
     ancora: HTMLElement;
     onFechar: () => void;
     onEditarFoto: () => void;
+    // só vem quando você pode expulsar essa pessoa do servidor aberto
+    onExpulsar?: () => void;
 };
 
 // distância mínima das bordas da janela e do elemento clicado
@@ -26,7 +28,7 @@ function dataLonga(iso: string) {
 }
 
 // cartão de perfil que abre ao clicar em alguém (membros, chat, salas de voz)
-export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto }: Props) {
+export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto, onExpulsar }: Props) {
     const ref = useRef<HTMLDivElement>(null);
     const [posicao, setPosicao] = useState<{ left: number; top: number } | null>(null);
 
@@ -116,6 +118,13 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
                     <button className="botao botao-pequeno botao-largo botao-contorno" onClick={onEditarFoto}>
                         <Camera size={14} />
                         Alterar foto
+                    </button>
+                )}
+
+                {onExpulsar && (
+                    <button className="botao botao-pequeno botao-largo botao-perigo-contorno" onClick={onExpulsar}>
+                        <UserMinus size={14} />
+                        Expulsar do servidor
                     </button>
                 )}
             </div>

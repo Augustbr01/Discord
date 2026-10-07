@@ -110,6 +110,9 @@ export const api = {
     criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal) =>
         chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala })),
     apagarCanal: (canalId: string) => chamar<void>(`/servidor/sala-deletar/${canalId}`, { method: "DELETE" }),
+    // só admin; o back avisa o servidor com MEMBROS (acao EXPULSO)
+    expulsarMembro: (idServidor: string, idMembro: string) =>
+        chamar<void>("/expulsar/membro", post({ idServidor, idMembro })),
 
     // expiraEm = segundos até expirar; undefined = convite permanente
     criarConvite: (idServidor: string, expiraEm?: number) =>

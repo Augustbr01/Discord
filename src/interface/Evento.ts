@@ -24,7 +24,12 @@ export enum statusTela {
     FECHOU = "FECHOU"
 }
 
+export enum AcaoUsuario {
+    EXPULSO = "EXPULSO"
+}
+
 export type Evento =
+    | {tipo: "MEMBROS";servidorId: string,usuarioId : string;acao: AcaoUsuario}
     | {tipo:"TELA";canalId:string;usuarioId : string; statusTela: statusTela}
     | { tipo: "ENTROU_NA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "SAIU_DA_CALL"; canalId: string; usuarioId: string }

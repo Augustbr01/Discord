@@ -5,6 +5,19 @@ import type { EventoGateway } from "../tipos";
 
 // aplica um evento do gateway no servidor em memória.
 // eventos de outro servidor (canal que não é daqui) são ignorados.
+// tira alguém da lista de membros e de qualquer sala de voz em que estivesse
+export function removerMembro(s: ServidorDetalhe, usuarioId: string): ServidorDetalhe {
+    return {
+        ...s,
+        membros: s.membros.filter((m) => m.usuario.id !== usuarioId),
+        canais: s.canais.map((c) =>
+            c.participantes
+                ? { ...c, participantes: c.participantes.filter((p) => p.id !== usuarioId), telas: (c.telas ?? []).filter((id) => id !== usuarioId) }
+                : c,
+        ),
+    };
+}
+
 function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
     if (evento.tipo === "ENTROU_NA_CALL" || evento.tipo === "SAIU_DA_CALL") {
         if (!s.canais.some((c) => c.id === evento.canalId)) return s;
@@ -26,6 +39,10 @@ function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
                 };
             }),
         };
+    }
+    if (evento.tipo === "MEMBROS") {
+        if (evento.servidorId !== s.id || !evento.usuarioId) return s;
+        return removerMembro(s, evento.usuarioId);
     }
     if (evento.tipo === "TELA") {
         if (!s.canais.some((c) => c.id === evento.canalId)) return s; // não é daqui
@@ -88,7 +105,13 @@ export function useServidor(id: string | null, aoErrar: (err: unknown) => void) 
         const pararReconexao = gateway.aoReconectar(() => buscar(true));
         // mudanças ao vivo (entrar/sair de call) chegam aqui
         const pararEventos = gateway.assinar((evento) => {
-            if (ativo) setServidor((s) => (s ? aplicar(s, evento) : s));
+            if (!ativo) return;
+            // saiu alguém, mas o evento não diz quem: só dá pra rebuscar a lista
+            if (evento.tipo === "MEMBROS" && evento.servidorId === id && !evento.usuarioId) {
+                buscar(true);
+                return;
+            }
+            setServidor((s) => (s ? aplicar(s, evento) : s));
         });
 
         return () => {
