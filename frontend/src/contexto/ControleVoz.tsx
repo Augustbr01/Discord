@@ -20,12 +20,14 @@ type Props = {
     setMicPreferido: (ligado: boolean) => void;
     surdo: boolean;
     setSurdo: (surdo: boolean) => void;
+    // mundo 3D aberto: o som sai pelo áudio espacial dele, não daqui
+    audioEspacial?: boolean;
     children: ReactNode;
 };
 
 // microfone e "áudio desligado" funcionam dentro e fora da chamada:
 // fora dela viram preferência (você entra já mutado), dentro dela agem na hora
-export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setSurdo, children }: Props) {
+export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setSurdo, audioEspacial = false, children }: Props) {
     const toast = useToast();
     const estado = useConnectionState();
     const conectado = estado === ConnectionState.Connected;
@@ -76,7 +78,8 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
 
     return (
         <Ctx.Provider value={valor}>
-            <RoomAudioRenderer muted={surdo} />
+            {/* volume 0 (e não muted) no 3D: o <audio> continua recebendo, só não toca */}
+            <RoomAudioRenderer muted={surdo} volume={audioEspacial ? 0 : 1} />
             {children}
         </Ctx.Provider>
     );

@@ -12,6 +12,8 @@ import fastifyWebsocket from "@fastify/websocket"
 import { RotasServidor } from "./routes/Servidor"
 import { routeWebSocket } from "./routes/WebSocketMain"
 import { routeHook } from "./routes/WebHook"
+import { iniciarSincronizacaoCalls } from "./sincronizarCalls"
+import { canaisComGente } from "./eventosCall"
 import "dotenv/config"
 const {JWT_SECRET,MODO,DISCORD_CLIENT_ID,DISCORD_CLIENT_SECRET,LIVEKIT_API_KEY,LIVEKIT_API_SECRET,LIVEKIT_URL} = process.env;
 
@@ -58,7 +60,7 @@ app.register(oauth2, {
         auth: oauth2.DISCORD_CONFIGURATION
     },
     startRedirectPath: "/api/auth/discord",
-    callbackUri: MODO === "development" ? "http://localhost:5173/api/auth/callback" : "https://liberdade.phelipedev.com.br/api/auth/callback"
+    callbackUri: MODO === "development" ? "http://localhost:5173/api/auth/callback" : "https://liberdade.augustdev.com.br/api/auth/callback"
 })
 app.register(routeHook,{prefix:"/api"});
 app.register(AuthDiscord, {prefix:"/api"});
@@ -69,6 +71,8 @@ app.register(LiveKit,{prefix:"/api"});
 
 app.listen({port:3000}, (error) => {
     console.log("ligou");
+    // quem está em cada call: confere com o LiveKit de tempos em tempos (não depende só do webhook)
+    iniciarSincronizacaoCalls(canaisComGente);
     if(error) {
         console.log(error);
     }

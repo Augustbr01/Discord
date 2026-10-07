@@ -3,6 +3,7 @@ import { ConnectionState, Track } from "livekit-client";
 import { MonitorUp, MonitorX, PhoneOff, Signal, Video, VideoOff } from "lucide-react";
 import { useAgora } from "../../hooks/useAgora";
 import { cronometro } from "../../lib/util";
+import { OPCOES_TELA, OPCOES_TELA_CINEMA } from "./Controles";
 import type { Voz } from "../../tipos";
 import { Dica } from "../ui/Dica";
 
@@ -14,7 +15,7 @@ export function PainelVoz({ voz, onAbrir, onSair }: Props) {
     const camera = useTrackToggle({ source: Track.Source.Camera, onDeviceError: () => {} });
     const tela = useTrackToggle({
         source: Track.Source.ScreenShare,
-        captureOptions: { audio: true, selfBrowserSurface: "exclude" },
+        ...(voz.canal.modelo === "CINEMA" ? OPCOES_TELA_CINEMA : OPCOES_TELA),
         onDeviceError: () => {},
     });
     const agora = useAgora();

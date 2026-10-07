@@ -1,7 +1,9 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
-import { Permissao,TipoCanal } from "../../generated/prisma/enums";
+import { ModeloSala, Permissao,TipoCanal } from "../../generated/prisma/enums";
 import { limparCall, participantesDaCall } from "../eventosCall";
+import { limparYoutube } from "../youtube";
+import { limparSala } from "../controleSala";
 import { publicarParaServidor } from "./eventosConexao";
 import { roomService } from "../config/RoomService";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
@@ -151,6 +153,7 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
                     id:true,
                     nome:true,
                     tipo: true,
+                    modelo: true,
                 },
                 orderBy: {criadoEm: "asc"}
             }
@@ -188,8 +191,8 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send(convite);
     })
 
-    fastify.post("/servidor/sala-criar", {schema: {body: Type.Object({servidorId: Type.String(),tipoSala: Type.Enum(TipoCanal),nomeCanal: Type.String({minLength: 1, maxLength: 50})})}},async (req,rep) => {
-        const {servidorId,tipoSala,nomeCanal} = req.body;
+    fastify.post("/servidor/sala-criar", {schema: {body: Type.Object({servidorId: Type.String(),tipoSala: Type.Enum(TipoCanal),nomeCanal: Type.String({minLength: 1, maxLength: 50}),modeloSala: Type.Optional(Type.Enum(ModeloSala))})}},async (req,rep) => {
+        const {servidorId,tipoSala,nomeCanal,modeloSala} = req.body;
         const idUsuario = req.user.id;
 
         const servidor = await prisma.servidor.findFirst({where:{id:servidorId, membros: {some: {usuarioId: idUsuario, permissao: Permissao.ADMIN}}}});
@@ -201,15 +204,18 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         const canal = await prisma.canal.create({data: {
             servidorId:servidorId,
             nome:nomeCanal,
-            tipo:tipoSala
+            tipo:tipoSala,
+            // modelo (sala comum, cinema...) só faz sentido em sala de voz
+            modelo: tipoSala === TipoCanal.VOZ && modeloSala ? modeloSala : ModeloSala.PADRAO
         },select: {
             id:true,
             nome:true,
             criadoEm: true,
-            tipo:true
+            tipo:true,
+            modelo:true
         }})
 
-        await publicarParaServidor(servidorId,{tipo:"CANAL_CRIADO",servidorId,canal:{id:canal.id,tipo: canal.tipo,criado_em:canal.criadoEm,nome:canal.nome}})
+        await publicarParaServidor(servidorId,{tipo:"CANAL_CRIADO",servidorId,canal:{id:canal.id,tipo: canal.tipo,modelo:canal.modelo,criado_em:canal.criadoEm,nome:canal.nome}})
         return rep.code(201).send(canal);
     })
 
@@ -232,6 +238,8 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
         if(servidor.tipo === TipoCanal.VOZ) {
             limparCall(idSala);
+            limparYoutube(idSala);
+            limparSala(idSala);
             await roomService.deleteRoom(idSala).catch((e) => {});
         }
 
@@ -258,6 +266,14 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             usuarioId:idUsuario,
             servidorId:entidade.servidorId
         }, select: {
+            permissao: true,
+            usuario: {
+                select: {
+                    id:true,
+                    nome:true,
+                    avatarUrl:true
+                }
+            },
             servidor: {
                 select: {
                     id:true,
@@ -267,6 +283,9 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             }
         }})
 
-        return rep.code(200).send(criado);
+        // avisa quem já está no servidor (lista de membros, nomes na call, boneco no mundo 3D)
+        await publicarParaServidor(entidade.servidorId,{tipo:"MEMBRO_ENTROU",servidorId:entidade.servidorId,membro:{permissao:criado.permissao,usuario:criado.usuario}});
+
+        return rep.code(200).send({servidor: criado.servidor});
     })
 }

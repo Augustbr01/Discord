@@ -1,0 +1,683 @@
+// Mundo 3D: o servidor aberto vira um andar do prédio, as salas de voz viram salas
+// de verdade. Entrar pela porta = entrar na call; sair dela = sair da call.
+// Carregado sob demanda (o three.js só baixa quando alguém abre o 3D).
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type RefObject } from "react";
+import { VideoTrack, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
+import { Track } from "livekit-client";
+import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Tablet, X } from "lucide-react";
+import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
+import { fonteDaTV, useControleSala } from "../../contexto/ControleSala";
+import { useControleVoz } from "../../contexto/ControleVoz";
+import { useYoutubeSala } from "../../contexto/YoutubeSala";
+import { pessoasNaSala } from "../../lib/salas";
+import { estaDigitando } from "../../lib/util";
+import type { MapaMembros, Voz } from "../../tipos";
+import { CanalTexto } from "../CanalTexto";
+import { Controles } from "../chamada/Controles";
+import { IconeServidor } from "../ui/Avatar";
+import { PainelControle } from "../controle/PainelControle";
+import type { SomDaTV } from "./AudioEspacial";
+import { CanvasMundo, Cena, criarTunel, type Pessoa, type Tunel } from "./Cena";
+import type { YoutubeNaTV } from "./Predio";
+import type { ControleToque, PedidoJogador } from "./Jogador";
+import { dentro, gerarPlanta, nascerNaSala, type Interativo, type Ponto } from "./planta";
+import { ITEM, POSTURA, useJogadoresDoAndar, type Pose } from "./rede";
+import { AvisoSoftware, ContextoPerdido, Limite3D, SemWebGL, verificarWebGL } from "./SemWebGL";
+import { carregarFontes } from "./texturas";
+
+type Props = {
+    servidor: ServidorDetalhe | null;
+    servidores: ServidorResumo[];
+    eu: Usuario;
+    membros: MapaMembros;
+    voz: Voz | null;
+    entrandoEm: string | null;
+    onEntrarSala: (canal: Canal) => void;
+    onSairSala: () => void;
+    // call do hall do andar (hall + corredor); mudo: entra com o microfone desligado
+    onEntrarHall: (opcoes?: { mudo?: boolean }) => void;
+    onTrocarAndar: (servidorId: string) => void;
+    // chegou a posição de alguém que não está na lista de membros: recarrega o servidor
+    onMembroDesconhecido?: () => void;
+    onFechar: () => void;
+};
+
+const ehToque = () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+
+export default function Mundo3D(props: Props) {
+    const [fontesProntas, setFontesProntas] = useState(false);
+    useEffect(() => {
+        carregarFontes().then(() => setFontesProntas(true));
+    }, []);
+
+    // dá pra desenhar em 3D aqui? (sem placa de vídeo não dá, ou dá bem devagar)
+    const [suporte, setSuporte] = useState(verificarWebGL);
+    const [avisoSoftware, setAvisoSoftware] = useState(true);
+    const [contextoPerdido, setContextoPerdido] = useState(false);
+    // muda pra montar a cena do zero ("tentar de novo", "recarregar o 3D")
+    const [tentativa, setTentativa] = useState(0);
+    // por onde o andar manda o conteúdo pro canvas (que não é recriado ao trocar de andar)
+    const [tunel] = useState(criarTunel);
+    // a primeira chegada (vindo da tela normal) entra na call do hall mutado; as trocas de andar não
+    const chegouAgora = useRef(true);
+    const remontar = () => {
+        setSuporte(verificarWebGL());
+        setContextoPerdido(false);
+        setTentativa((n) => n + 1);
+    };
+
+    const { servidor } = props;
+    // criou ou apagou canal: a planta muda, então o andar é montado de novo
+    const chave = servidor ? `${servidor.id}:${servidor.canais.map((c) => c.id).join(",")}:${tentativa}` : "";
+    const semWebGL = <SemWebGL onTentar={remontar} onFechar={props.onFechar} />;
+
+    return (
+        <div className="mundo">
+            {!suporte.ok ? (
+                semWebGL
+            ) : (
+                <Limite3D key={tentativa} fallback={semWebGL}>
+                    <CanvasMundo tunel={tunel} onContexto={setContextoPerdido} />
+                    {servidor && fontesProntas ? (
+                        <Andar key={chave} {...props} servidor={servidor} tunel={tunel} chegouAgora={chegouAgora} />
+                    ) : (
+                        <div className="mundo-carregando">
+                            <Loader2 size={20} className="girar" />
+                            <span>Chegando no andar…</span>
+                        </div>
+                    )}
+                    {contextoPerdido && <ContextoPerdido onRecarregar={remontar} />}
+                    {suporte.software && avisoSoftware && <AvisoSoftware onFechar={() => setAvisoSoftware(false)} />}
+                </Limite3D>
+            )}
+            <button className="mundo-sair" onClick={props.onFechar}>
+                <LogOut size={16} />
+                Sair do 3D
+            </button>
+        </div>
+    );
+}
+
+type Dica = { tecla?: string; texto: string; carregando?: boolean };
+
+type PropsAndar = Props & {
+    servidor: ServidorDetalhe;
+    tunel: Tunel;
+    chegouAgora: RefObject<boolean>;
+};
+
+function Andar({
+    servidor, servidores, eu, membros, voz, entrandoEm,
+    onEntrarSala, onSairSala, onEntrarHall, onTrocarAndar, onMembroDesconhecido, tunel, chegouAgora,
+}: PropsAndar) {
+    const { surdo } = useControleVoz();
+    const youtube = useYoutubeSala();
+    const controle = useControleSala();
+    const sala = useMaybeRoomContext();
+    const remotos = useRemoteParticipants();
+    // faixas sem vídeo (ainda não recebidas, ou câmera desligada) são ignoradas mais abaixo
+    const faixas = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { onlySubscribed: false });
+
+    // a planta só depende de quais canais existem, e o Andar é recriado quando isso muda
+    const [planta] = useState(() => gerarPlanta(servidor.canais));
+    const canais = useMemo(() => new Map(servidor.canais.map((c) => [c.id, c])), [servidor.canais]);
+    const idsSalas = useMemo(() => new Set(planta.salas.map((s) => s.canalId)), [planta]);
+    const andar = Math.max(1, servidores.findIndex((s) => s.id === servidor.id) + 1);
+    const vozNoAndar = voz && idsSalas.has(voz.canal.id) ? voz.canal.id : null;
+
+    // já estava numa call daqui? aparece dentro da sala; senão, no elevador
+    const [inicio] = useState(() => {
+        const salaDaCall = planta.salas.find((s) => s.canalId === vozNoAndar);
+        return salaDaCall ? nascerNaSala(salaDaCall) : planta.nascer;
+    });
+    const pose = useRef<Pose>({ ...inicio, y: 0, pitch: 0, postura: POSTURA.EM_PE, item: ITEM.NADA });
+    const posicoes = useRef(new Map<string, Ponto>()).current;
+    const toque = useRef<ControleToque>({ andar: { x: 0, y: 0 }, olhar: { x: 0, y: 0 }, pular: false, agachado: false });
+    const pedido = useRef<PedidoJogador | null>(null);
+    const [postura, setPostura] = useState<number>(POSTURA.EM_PE);
+    const [agachadoToque, setAgachadoToque] = useState(false);
+    const noElevador = dentro(planta.elevador, inicio);
+
+    const [salaAtual, setSalaAtual] = useState<string | null>(() => planta.salas.find((s) => dentro(s.ret, inicio))?.canalId ?? null);
+    const [foco, setFoco] = useState<Interativo | null>(null);
+    const [travado, setTravado] = useState(false);
+    const [portaAberta, setPortaAberta] = useState(!noElevador);
+    const portaFechada = useRef(!portaAberta);
+    const [seletorAberto, setSeletorAberto] = useState(false);
+    const [chatId, setChatId] = useState<string | null>(null);
+    // o controle da sala (tablet), aberto na aba Controle ou YouTube. Aberto = tablet na mão
+    // (os outros veem o seu boneco segurando)
+    const [controleAberto, setControleAberto] = useState<"controle" | "youtube" | null>(null);
+    useEffect(() => {
+        pose.current.item = controleAberto ? ITEM.TABLET : ITEM.NADA;
+    }, [controleAberto]);
+    const [telaCheia, setTelaCheia] = useState(false);
+    const [toqueAtivo] = useState(ehToque);
+
+    const { alvos, ids } = useJogadoresDoAndar(servidor.id, eu.id, pose);
+
+    // alguém andando aqui que a lista de membros ainda não conhece (entrou no servidor depois
+    // que ela foi carregada e o aviso se perdeu): recarrega uma vez por pessoa, sem ficar em loop
+    const jaPedidos = useRef(new Set<string>());
+    useEffect(() => {
+        const novos = ids.filter((id) => !membros.has(id) && !jaPedidos.current.has(id));
+        if (novos.length === 0) return;
+        novos.forEach((id) => jaPedidos.current.add(id));
+        onMembroDesconhecido?.();
+    }, [ids, membros, onMembroDesconhecido]);
+
+    // chegou de elevador: a porta abre logo depois
+    useEffect(() => {
+        if (!noElevador) return;
+        const t = window.setTimeout(() => setPortaAberta(true), 700);
+        return () => window.clearTimeout(t);
+    }, [noElevador]);
+
+    useEffect(() => {
+        portaFechada.current = !portaAberta;
+    }, [portaAberta]);
+
+    // ---------- entrar e sair das calls andando ----------
+
+    const atual = useRef({ voz, canais, idsSalas, salaAtual, onEntrarSala, onEntrarHall, onSairSala });
+    atual.current = { voz, canais, idsSalas, salaAtual, onEntrarSala, onEntrarHall, onSairSala };
+
+    // Quando o mundo é aberto e o jogador não está numa sala, ele entra no hall da call
+    // com microfone mutado por padrão. Isso mantém o hall como a "call de contexto" do 3D,
+    // sem resetar a posição do jogador nem criar um teleporte artificial.
+    useEffect(() => {
+        const v = atual.current.voz;
+        const jaAqui = !!v && (atual.current.idsSalas.has(v.canal.id) || (!!v.hall && v.servidorId === servidor.id));
+        if (!jaAqui) atual.current.onEntrarHall({ mudo: true });
+        chegouAgora.current = false;
+    }, [servidor.id]);
+
+    // entrou numa sala: troca pra call dela; saiu pro hall/corredor: volta pra call do hall
+    const aoMudarSala = useCallback((id: string | null) => {
+        const a = atual.current;
+        setSalaAtual(id);
+        a.salaAtual = id;
+        if (id) {
+            const canal = a.canais.get(id);
+            if (canal && a.voz?.canal.id !== id) a.onEntrarSala(canal);
+        } else if (a.voz && a.idsSalas.has(a.voz.canal.id)) {
+            a.onEntrarHall({ mudo: true });
+        }
+    }, []);
+
+    // A troca de call deve seguir a zona real do jogador no mundo 3D, não o estado da voz em si.
+    // Se a chamada muda por reconexão, não mexemos na posição nem no spawn, e o movimento continua
+    // controlando quando sair da sala e entrar no hall ou numa sala de voz.
+
+    // ---------- quem aparece no andar ----------
+
+    const remotosPorId = useMemo(() => new Map(remotos.map((p) => [p.identity, p])), [remotos]);
+
+    const midia = useMemo(() => {
+        const porPessoa = new Map<string, { camera?: Track; telas: Track[] }>();
+        const telasDaCall: TrackReference[] = [];
+        for (const t of faixas) {
+            if (!t.publication.track || t.publication.isMuted) continue;
+            if (t.source === Track.Source.ScreenShare) telasDaCall.push(t);
+            if (t.participant.isLocal) continue;
+            const m = porPessoa.get(t.participant.identity) ?? { telas: [] };
+            if (t.source === Track.Source.Camera) m.camera = t.publication.track;
+            else m.telas.push(t.publication.track);
+            porPessoa.set(t.participant.identity, m);
+        }
+        return { porPessoa, telasDaCall };
+    }, [faixas]);
+
+    const pessoas: Pessoa[] = [];
+    const andando = new Set(ids);
+    const comMidia = (id: string) => ({
+        participante: remotosPorId.get(id),
+        camera: midia.porPessoa.get(id)?.camera,
+        telas: midia.porPessoa.get(id)?.telas ?? [],
+    });
+    for (const id of ids) {
+        const usuario = membros.get(id);
+        if (usuario) pessoas.push({ usuario, lerAlvo: () => alvos.get(id), ...comMidia(id) });
+    }
+
+    // lugares ocupados por quem está no 3D (sentado em cima do assento), inclusive você
+    const ocupadosNo3D = new Set<string>();
+    const ocupar = (p: Pose) => {
+        if (p.postura !== POSTURA.SENTADO) return;
+        const a = planta.assentos.find((q) => Math.hypot(q.x - p.x, q.z - p.z) < 0.35);
+        if (a) ocupadosNo3D.add(a.id);
+    };
+    alvos.forEach(ocupar);
+    ocupar(pose.current);
+    const ocupados = new Set(ocupadosNo3D);
+
+    // quem está na call pelo modo clássico senta nos lugares livres da sala (sempre na mesma
+    // ordem, pra todo mundo ver a pessoa no mesmo lugar); sem lugar, fica em pé
+    for (const s of planta.salas) {
+        const fora = (canais.get(s.canalId)?.participantes ?? [])
+            .filter((p) => p.id !== eu.id && !andando.has(p.id))
+            .sort((a, b) => a.id.localeCompare(b.id));
+        const livres = s.assentos.filter((a) => !ocupadosNo3D.has(a.id));
+        fora.forEach((usuario, i) => {
+            const assento = livres[i];
+            const lugar = s.lugares[(i - livres.length) % s.lugares.length];
+            const alvo: Pose = assento
+                ? { x: assento.x, z: assento.z, y: assento.y, rot: assento.rot, pitch: 0, postura: POSTURA.SENTADO, item: ITEM.NADA }
+                : { ...lugar, y: 0, pitch: 0, postura: POSTURA.EM_PE, item: ITEM.NADA };
+            if (assento) ocupados.add(assento.id);
+            pessoas.push({ usuario, lerAlvo: () => alvo, ...comMidia(usuario.id) });
+        });
+    }
+    const assentosPorId = useMemo(() => new Map(planta.assentos.map((a) => [a.id, a])), [planta]);
+
+    const pessoasPorSala = new Map<string, number>();
+    for (const s of planta.salas) {
+        const canal = canais.get(s.canalId);
+        pessoasPorSala.set(s.canalId, canal ? pessoasNaSala(canal, voz, eu).length : 0);
+    }
+
+    // o que vai na TV da sala da sua call: o que escolheram no controle da sala (tablet)
+    const fonte = fonteDaTV(controle.estado, youtube.estado, midia.telasDaCall);
+    const salaDaCall = planta.salas.find((s) => s.canalId === vozNoAndar);
+    const telaDaSala = fonte.tipo === "tela" ? fonte.tela.publication.track : undefined;
+
+    // YouTube junto na TV: mais alto perto da TV, mais baixo no fundo da sala, vezes o volume do controle
+    const volumeTV = useRef(100);
+    const volumeControle = useRef(100);
+    volumeControle.current = controle.estado?.volume ?? 100;
+    useEffect(() => {
+        if (!salaDaCall) return;
+        const t = window.setInterval(() => {
+            const d = Math.hypot(pose.current.x - salaDaCall.tv.x, pose.current.z - salaDaCall.tv.z);
+            volumeTV.current = Math.max(25, Math.min(100, 100 - (d - 2.5) * 9)) * (volumeControle.current / 100);
+        }, 300);
+        return () => window.clearInterval(t);
+    }, [salaDaCall]);
+
+    const youtubeNaTV: YoutubeNaTV | undefined = salaDaCall && fonte.tipo === "youtube" && youtube.estado?.video
+        ? { estado: youtube.estado, posicaoAgora: youtube.posicaoAgora, enviar: youtube.enviar, volume: volumeTV, mudo: surdo }
+        : undefined;
+
+    // o som da tela que está na TV sai pelas caixas da sala (a sua própria tela você não ouve)
+    const somTV: SomDaTV | null = salaDaCall && fonte.tipo === "tela" && !fonte.tela.participant.isLocal && controle.estado
+        ? {
+              identidade: fonte.tela.participant.identity,
+              caixas: salaDaCall.caixasSom,
+              tela: { x: salaDaCall.tv.x, y: salaDaCall.tv.y, z: salaDaCall.tv.z },
+              surround: controle.estado.surround,
+              volume: controle.estado.volume,
+              alcance: salaDaCall.modelo === "CINEMA" ? 5 : 2.6,
+          }
+        : null;
+
+    // luz: no automático, o cinema apaga com filme rolando; o controle da sala pode forçar acesa/apagada.
+    // Só vale dentro da sala da sua call (é dela que você tem o controle)
+    const cinema = planta.salas.find((s) => s.canalId === salaAtual && s.modelo === "CINEMA");
+    const filmeRolando = (fonte.tipo === "youtube" && !!youtube.estado?.tocando) || fonte.tipo === "tela";
+    const luzes = controle.estado?.luzes ?? "AUTO";
+    const naSalaDaCall = !!salaDaCall && salaAtual === salaDaCall.canalId;
+    const escuro = naSalaDaCall && (luzes === "APAGADAS" || (luzes === "AUTO" && !!cinema && filmeRolando));
+
+    // ---------- teclas E e F ----------
+
+    const noCanal = salaAtual ? canais.get(salaAtual) : undefined;
+    const dica: Dica | null =
+        foco?.tipo === "elevador" ? { tecla: "E", texto: "Escolher andar" }
+        : foco?.tipo === "texto" ? { tecla: "E", texto: `Abrir #${canais.get(foco.canalId ?? "")?.nome ?? ""}` }
+        : (foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar
+            ? { tecla: "E", texto: "Controle da sala" }
+        : foco?.tipo === "assento"
+            ? ocupados.has(foco.assentoId ?? "") ? { texto: "Lugar ocupado" } : { tecla: "E", texto: "Sentar" }
+        : salaAtual && entrandoEm === salaAtual ? { texto: "Conectando à call…", carregando: true }
+        : salaAtual && vozNoAndar !== salaAtual ? { tecla: "E", texto: "Entrar na call" }
+        : salaAtual && midia.telasDaCall.length > 0 ? { tecla: "F", texto: "Ver a tela compartilhada" }
+        : null;
+
+    const soltarMouse = () => {
+        if (document.pointerLockElement) document.exitPointerLock();
+    };
+
+    const acoes = useRef({ e: () => {}, f: () => {}, t: () => {} });
+    acoes.current.e = () => {
+        if (foco?.tipo === "elevador") {
+            soltarMouse();
+            setSeletorAberto(true);
+        } else if (foco?.tipo === "texto" && foco.canalId) {
+            soltarMouse();
+            setControleAberto(null);
+            setChatId(foco.canalId);
+        } else if ((foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar) {
+            soltarMouse();
+            setChatId(null);
+            setControleAberto("controle");
+        } else if (foco?.tipo === "assento") {
+            const assento = assentosPorId.get(foco.assentoId ?? "");
+            if (assento && !ocupados.has(assento.id)) pedido.current = { tipo: "sentar", assento };
+        } else if (noCanal && vozNoAndar !== noCanal.id && entrandoEm !== noCanal.id) {
+            onEntrarSala(noCanal);
+        }
+    };
+    // T: pega/guarda o tablet (o controle da sala da sua call)
+    acoes.current.t = () => {
+        if (controleAberto) {
+            setControleAberto(null);
+            return;
+        }
+        soltarMouse();
+        setChatId(null);
+        setControleAberto("controle");
+    };
+    acoes.current.f = () => {
+        if (salaAtual && midia.telasDaCall.length > 0) {
+            soltarMouse();
+            setTelaCheia(true);
+        }
+    };
+
+    useEffect(() => {
+        const aoTeclar = (e: KeyboardEvent) => {
+            if (estaDigitando(e) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+            // preventDefault: o painel que abre foca um campo de texto, e sem isso a própria
+            // tecla ("e") seria digitada nele
+            if (e.code === "KeyE") {
+                e.preventDefault();
+                acoes.current.e();
+            }
+            if (e.code === "KeyF") {
+                e.preventDefault();
+                acoes.current.f();
+            }
+            if (e.code === "KeyT") {
+                e.preventDefault();
+                acoes.current.t();
+            }
+            if (e.code === "Escape") {
+                setSeletorAberto(false);
+                setTelaCheia(false);
+                setControleAberto(null);
+            }
+        };
+        window.addEventListener("keydown", aoTeclar);
+        return () => window.removeEventListener("keydown", aoTeclar);
+    }, []);
+
+    // ---------- elevador ----------
+
+    const trocando = useRef<number | undefined>(undefined);
+    useEffect(() => () => window.clearTimeout(trocando.current), []);
+
+    function irParaAndar(id: string) {
+        setSeletorAberto(false);
+        if (id === servidor.id) return;
+        // fecha a porta e "sobe": a troca de servidor recria o andar
+        setPortaAberta(false);
+        trocando.current = window.setTimeout(() => onTrocarAndar(id), 900);
+    }
+
+    const parado = seletorAberto || telaCheia;
+    const canalChat = chatId ? canais.get(chatId) : undefined;
+    const lugar = noCanal
+        ? `${noCanal.nome}${vozNoAndar === noCanal.id ? " · na call" : ""}`
+        : voz?.hall && voz.servidorId === servidor.id ? "Hall e corredor · na call do hall" : "Hall e corredor";
+
+    return (
+        <>
+            <tunel.In>
+                <Cena
+                    planta={planta}
+                    servidor={servidor}
+                    andar={andar}
+                    pose={pose}
+                    pessoas={pessoas}
+                    posicoes={posicoes}
+                    pessoasPorSala={pessoasPorSala}
+                    salaDaCall={vozNoAndar}
+                    telaDaSala={telaDaSala}
+                    youtube={youtubeNaTV}
+                    portaAberta={portaAberta}
+                    portaFechada={portaFechada}
+                    parado={parado}
+                    toque={toque}
+                    pedido={pedido}
+                    sala={sala}
+                    proximidade={!!voz?.hall}
+                    surdo={surdo}
+                    escuro={escuro}
+                    telao={naSalaDaCall && salaDaCall ? { x: salaDaCall.tv.x, y: salaDaCall.tv.y, z: salaDaCall.tv.z, rot: salaDaCall.tv.rot } : null}
+                somTV={somTV}
+                    onPostura={setPostura}
+                    onSala={aoMudarSala}
+                    onFoco={setFoco}
+                    onTravado={setTravado}
+                />
+            </tunel.In>
+
+            <div className="mundo-hud">
+                <div className="mundo-local">
+                    <IconeServidor nome={servidor.nome} url={servidor.iconeUrl} tamanho={32} />
+                    <div>
+                        <strong className="truncar">{servidor.nome}</strong>
+                        <span className="truncar">{andar}º andar · {lugar}</span>
+                    </div>
+                </div>
+
+                {travado && <span className="mundo-mira" />}
+
+                {!travado && !toqueAtivo && !parado && !canalChat && !controleAberto && (
+                    <div className="mundo-ajuda">
+                        <strong>Clique para andar</strong>
+                        <span>
+                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> correr · <kbd>Espaço</kbd> pular · <kbd>C</kbd> agachar
+                            <br />
+                            correndo + <kbd>C</kbd> desliza · <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>Esc</kbd> soltar o mouse
+                        </span>
+                    </div>
+                )}
+
+                {dica && !controleAberto && (
+                    <div className="mundo-dica">
+                        {dica.tecla && (toqueAtivo
+                            ? <button className="mundo-dica-botao" onClick={() => (dica.tecla === "F" ? acoes.current.f() : acoes.current.e())}>{dica.tecla}</button>
+                            : <kbd>{dica.tecla}</kbd>)}
+                        {dica.carregando && <Loader2 size={14} className="girar" />}
+                        <span>{dica.texto}</span>
+                    </div>
+                )}
+
+                {postura === POSTURA.SENTADO && !toqueAtivo && (
+                    <div className={`mundo-dica mundo-dica-secundaria ${dica ? "" : "sozinha"}`}>
+                        <kbd>Espaço</kbd>
+                        <span>Levantar</span>
+                    </div>
+                )}
+
+                {voz && (
+                    <div className="mundo-controles">
+                        <Controles onSair={onSairSala} cinema={voz.canal.modelo === "CINEMA"} />
+                    </div>
+                )}
+            </div>
+
+            {toqueAtivo && !parado && <ControlesToque toque={toque} />}
+
+            {toqueAtivo && !parado && (
+                <div className="mundo-botoes-toque">
+                    <button
+                        className={agachadoToque ? "ativo" : ""}
+                        onClick={() => {
+                            toque.current.agachado = !toque.current.agachado;
+                            setAgachadoToque(toque.current.agachado);
+                        }}
+                        aria-label="Agachar"
+                        aria-pressed={agachadoToque}
+                    >
+                        <ChevronsDown size={22} />
+                    </button>
+                    <button onClick={() => { toque.current.pular = true; }} aria-label={postura === POSTURA.SENTADO ? "Levantar" : "Pular"}>
+                        <ChevronsUp size={22} />
+                    </button>
+                    <button className={controleAberto ? "ativo" : ""} onClick={() => acoes.current.t()} aria-label="Tablet" aria-pressed={!!controleAberto}>
+                        <Tablet size={20} />
+                    </button>
+                </div>
+            )}
+
+            {canalChat && (
+                <aside className="mundo-chat">
+                    <CanalTexto
+                        key={canalChat.id}
+                        canal={canalChat}
+                        eu={eu}
+                        membros={membros}
+                        membrosVisivel={false}
+                        onMembros={() => {}}
+                        onBuscar={() => {}}
+                        onMenu={() => {}}
+                    />
+                    <button className="botao-icone mundo-chat-fechar" onClick={() => setChatId(null)} aria-label="Fechar o chat">
+                        <X size={18} />
+                    </button>
+                </aside>
+            )}
+
+            {/* o painel só vale dentro da call da sala (é quem pode controlar) */}
+            {/* o tablet na mão: sobe da parte de baixo da tela (dá pra continuar andando com WASD) */}
+            {controleAberto && (
+                <div className="mundo-tablet">
+                    <div className="mundo-tablet-tela">
+                        <PainelControle
+                            key={controleAberto}
+                            membros={membros}
+                            eu={eu}
+                            telas={midia.telasDaCall}
+                            abaInicial={controleAberto}
+                            aviso={
+                                !voz ? "Entre numa sala de voz pra controlar a TV, o som e as luzes dela."
+                                : voz.hall ? "No hall não tem TV. Entre numa sala pra controlar a TV, o som e as luzes dela."
+                                : undefined
+                            }
+                            onFechar={() => setControleAberto(null)}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {seletorAberto && (
+                <div className="mundo-modal" onClick={() => setSeletorAberto(false)}>
+                    <div className="mundo-elevador" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Escolher andar">
+                        <div className="mundo-elevador-topo">
+                            <strong>Para qual andar?</strong>
+                            <button className="botao-icone" onClick={() => setSeletorAberto(false)} aria-label="Fechar">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <ul>
+                            {[...servidores].map((s, i) => ({ s, n: i + 1 })).reverse().map(({ s, n }) => (
+                                <li key={s.id}>
+                                    <button className={`mundo-andar ${s.id === servidor.id ? "atual" : ""}`} onClick={() => irParaAndar(s.id)}>
+                                        <span className="mundo-andar-numero">{n}</span>
+                                        <IconeServidor nome={s.nome} url={s.iconeUrl} tamanho={28} />
+                                        <span className="truncar">{s.nome}</span>
+                                        {s.id === servidor.id && <small>você está aqui</small>}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            )}
+
+            {telaCheia && midia.telasDaCall.length > 0 && (
+                <TelaCheia telas={midia.telasDaCall} membros={membros} eu={eu} onFechar={() => setTelaCheia(false)} />
+            )}
+        </>
+    );
+}
+
+function TelaCheia({ telas, membros, eu, onFechar }: { telas: TrackReference[]; membros: MapaMembros; eu: Usuario; onFechar: () => void }) {
+    const [escolhida, setEscolhida] = useState(0);
+    const atual = telas[Math.min(escolhida, telas.length - 1)];
+    const nome = (t: TrackReference) => (t.participant.isLocal ? eu.nome : membros.get(t.participant.identity)?.nome ?? t.participant.name ?? "Alguém");
+
+    return (
+        <div className="mundo-modal mundo-tela-cheia" onClick={onFechar}>
+            <div className="mundo-tela-cheia-topo" onClick={(e) => e.stopPropagation()}>
+                {telas.map((t, i) => (
+                    <button key={t.publication.trackSid} className={`botao ${i === escolhida ? "botao-primario" : ""}`} onClick={() => setEscolhida(i)}>
+                        <MonitorUp size={15} /> {t.participant.isLocal ? "Sua tela" : `Tela de ${nome(t)}`}
+                    </button>
+                ))}
+                <button className="botao-icone" onClick={onFechar} aria-label="Fechar">
+                    <X size={18} />
+                </button>
+            </div>
+            <div className="mundo-tela-cheia-video" onClick={(e) => e.stopPropagation()}>
+                <VideoTrack trackRef={atual} />
+            </div>
+        </div>
+    );
+}
+
+// celular/tablet: metade esquerda é o joystick, metade direita gira a câmera
+function ControlesToque({ toque }: { toque: RefObject<ControleToque> }) {
+    const RAIO = 56;
+    const [base, setBase] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
+    const joystick = useRef<{ id: number; x: number; y: number } | null>(null);
+    const olhar = useRef<{ id: number; x: number; y: number } | null>(null);
+
+    const aoTocar = (e: EventoPonteiro<HTMLDivElement>) => {
+        if (e.pointerType === "mouse") return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        if (e.clientX < window.innerWidth / 2 && joystick.current === null) {
+            joystick.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+            setBase({ x: e.clientX, y: e.clientY, dx: 0, dy: 0 });
+        } else if (olhar.current === null) {
+            olhar.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        }
+    };
+
+    const aoMover = (e: EventoPonteiro<HTMLDivElement>) => {
+        const j = joystick.current;
+        if (j && e.pointerId === j.id) {
+            let dx = e.clientX - j.x;
+            let dy = e.clientY - j.y;
+            const d = Math.hypot(dx, dy);
+            if (d > RAIO) {
+                dx = (dx / d) * RAIO;
+                dy = (dy / d) * RAIO;
+            }
+            toque.current.andar.x = dx / RAIO;
+            toque.current.andar.y = dy / RAIO;
+            setBase({ x: j.x, y: j.y, dx, dy });
+        } else if (olhar.current?.id === e.pointerId) {
+            toque.current.olhar.x += e.clientX - olhar.current.x;
+            toque.current.olhar.y += e.clientY - olhar.current.y;
+            olhar.current.x = e.clientX;
+            olhar.current.y = e.clientY;
+        }
+    };
+
+    const aoSoltar = (e: EventoPonteiro<HTMLDivElement>) => {
+        if (e.pointerId === joystick.current?.id) {
+            joystick.current = null;
+            toque.current.andar.x = 0;
+            toque.current.andar.y = 0;
+            setBase(null);
+        }
+        if (olhar.current?.id === e.pointerId) olhar.current = null;
+    };
+
+    return (
+        <div className="mundo-toque" onPointerDown={aoTocar} onPointerMove={aoMover} onPointerUp={aoSoltar} onPointerCancel={aoSoltar}>
+            {base ? (
+                <span className="mundo-joystick" style={{ left: base.x, top: base.y }}>
+                    <span style={{ transform: `translate(${base.dx}px, ${base.dy}px)` }} />
+                </span>
+            ) : (
+                <span className="mundo-toque-ajuda">
+                    Arraste à esquerda para andar e à direita para olhar
+                </span>
+            )}
+        </div>
+    );
+}

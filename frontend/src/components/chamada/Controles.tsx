@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTrackToggle } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { AudioPresets, ScreenSharePresets, Track } from "livekit-client";
 import {
     Headphones, HeadphoneOff, Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Video, VideoOff,
 } from "lucide-react";
@@ -11,8 +11,25 @@ import { estaDigitando } from "../../lib/util";
 import { Dica } from "../ui/Dica";
 import { Dispositivos } from "./Dispositivos";
 
+// áudio da tela é música/filme, não voz: em estéreo (o surround do 3D separa esquerda e direita),
+// sem o tratamento de voz do navegador (anti-eco, anti-ruído e ganho automático estragam música)
+// e sem dtx/red (que picotam o som), com bitrate de música
+const AUDIO_DA_TELA = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+const PUBLICAR_AUDIO_DA_TELA = { audioPreset: AudioPresets.musicHighQualityStereo, dtx: false, red: false, forceStereo: true };
+
+export const OPCOES_TELA = {
+    captureOptions: { audio: AUDIO_DA_TELA, selfBrowserSurface: "exclude" as const },
+    publishOptions: PUBLICAR_AUDIO_DA_TELA,
+};
+
+// cinema: além disso, tela compartilhada a 30 quadros por segundo (filme a 15 fps fica travado)
+export const OPCOES_TELA_CINEMA = {
+    captureOptions: { ...OPCOES_TELA.captureOptions, resolution: { width: 1920, height: 1080, frameRate: 30 } },
+    publishOptions: { ...PUBLICAR_AUDIO_DA_TELA, screenShareEncoding: ScreenSharePresets.h1080fps30.encoding },
+};
+
 // barra de controles da chamada
-export function Controles({ onSair }: { onSair: () => void }) {
+export function Controles({ onSair, cinema = false }: { onSair: () => void; cinema?: boolean }) {
     const toast = useToast();
     const { micLigado, micPendente, alternarMic, surdo, alternarSurdo } = useControleVoz();
 
@@ -20,7 +37,7 @@ export function Controles({ onSair }: { onSair: () => void }) {
     const camera = useTrackToggle({ source: Track.Source.Camera, onDeviceError: aoFalharCamera });
     const tela = useTrackToggle({
         source: Track.Source.ScreenShare,
-        captureOptions: { audio: true, selfBrowserSurface: "exclude" },
+        ...(cinema ? OPCOES_TELA_CINEMA : OPCOES_TELA),
         onDeviceError: () => {},
     });
 

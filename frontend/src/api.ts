@@ -3,8 +3,10 @@
 export type Usuario = { id: string; nome: string; avatarUrl: string | null };
 export type Permissao = "ADMIN" | "MEMBRO";
 export type TipoCanal = "TEXTO" | "VOZ";
+// como a sala de voz é montada no mundo 3D
+export type ModeloSala = "PADRAO" | "CINEMA";
 // participantes: quem está na sala agora (só canais de voz, quando o back mandar)
-export type Canal = { id: string; nome: string; tipo: TipoCanal; participantes?: Usuario[] };
+export type Canal = { id: string; nome: string; tipo: TipoCanal; modelo?: ModeloSala; participantes?: Usuario[] };
 export type Membro = { permissao: Permissao; usuario: Usuario };
 export type ServidorResumo = { id: string; nome: string; iconeUrl: string | null };
 export type ServidorDetalhe = ServidorResumo & {
@@ -87,8 +89,8 @@ export const api = {
         return { ...bruto, canais };
     },
     criarServidor: (nomeServidor: string) => chamar<ServidorResumo>("/servidor/criar", post({ nomeServidor })),
-    criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal) =>
-        chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala })),
+    criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal, modeloSala?: ModeloSala) =>
+        chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala, ...(modeloSala ? { modeloSala } : {}) })),
     apagarCanal: (canalId: string) => chamar<void>(`/servidor/sala-deletar/${canalId}`, { method: "DELETE" }),
 
     // expiraEm = segundos até expirar; undefined = convite permanente
@@ -107,6 +109,9 @@ export const api = {
 
     tokenVoz: (canalId: string) =>
         chamar<ConexaoVoz>(`/livekit/token?${new URLSearchParams({ salaId: canalId })}`),
+    // call do hall do mundo 3D (uma por servidor, escondida de quem está fora do 3D)
+    tokenHall: (servidorId: string) =>
+        chamar<ConexaoVoz>(`/livekit/token?${new URLSearchParams({ hall: servidorId })}`),
 };
 
 export function mensagemDeErro(err: unknown) {

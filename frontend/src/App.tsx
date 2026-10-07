@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
 import { DisconnectReason, ScreenSharePresets, VideoPresets, type MediaDeviceFailure, type RoomOptions } from "livekit-client";
-import { Bird, Hash, Loader2, LogOut, PhoneOff, Plus, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
+import { Bird, Building2, Hash, Loader2, LogOut, PhoneOff, Plus, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
 import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
@@ -9,6 +9,8 @@ import {
 import { ChatSalaProvider } from "./contexto/ChatSala";
 import { ControleVozProvider } from "./contexto/ControleVoz";
 import { ToastProvider, useToast } from "./contexto/Toasts";
+import { YoutubeSalaProvider } from "./contexto/YoutubeSala";
+import { ControleSalaProvider } from "./contexto/ControleSala";
 import { useServidor } from "./hooks/useServidor";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
@@ -27,6 +29,9 @@ import { Paleta, type ItemPaleta } from "./components/Paleta";
 import { SemServidor } from "./components/SemServidor";
 import { IconeServidor } from "./components/ui/Avatar";
 import { Cabecalho } from "./components/ui/Cabecalho";
+
+// o 3D (three.js) só é baixado quando alguém abre o mundo
+const Mundo3D = lazy(() => import("./components/mundo/Mundo3D"));
 
 const CHAVE_CONVITE = "convitePendente";
 const CHAVE_SERVIDOR = "liberdade:servidor";
@@ -83,8 +88,6 @@ function Aplicacao() {
     // último canal aberto em cada servidor (só os de texto são lembrados entre visitas)
     const [canalPorServidor, setCanalPorServidor] = useState<Record<string, string>>(() => lerArmazenado(CHAVE_CANAIS, {}));
     const [voz, setVoz] = useState<Voz | null>(null);
-    // muda só quando você troca direto de uma sala pra outra (força uma conexão nova)
-    const [sessaoVoz, setSessaoVoz] = useState(0);
     const [entrandoEm, setEntrandoEm] = useState<string | null>(null);
     const [micPreferido, setMicPreferido] = useState(() => lerArmazenado(CHAVE_MIC, true));
     const [surdo, setSurdo] = useState(false);
@@ -93,6 +96,7 @@ function Aplicacao() {
     const [modal, setModal] = useState<ModalAberto>(null);
     const [paletaAberta, setPaletaAberta] = useState(false);
     const [menuAberto, setMenuAberto] = useState(false);
+    const [mundoAberto, setMundoAberto] = useState(false);
 
     useEffect(() => salvarArmazenado(CHAVE_MIC, micPreferido), [micPreferido]);
     // só salva quando você mesmo mostra/oculta (abrir no celular não muda a escolha do computador)
@@ -115,7 +119,7 @@ function Aplicacao() {
         toast.erro(mensagemDeErro(err));
     }, [toast]);
 
-    const { servidor: servidorCarregado, setServidor } = useServidor(eu ? servidorId : null, tratarErro);
+    const { servidor: servidorCarregado, setServidor, recarregar: recarregarServidor } = useServidor(eu ? servidorId : null, tratarErro);
     // evita mostrar por um instante o servidor anterior enquanto o novo carrega
     const servidor = servidorCarregado?.id === servidorId ? servidorCarregado : null;
 
@@ -220,20 +224,57 @@ function Aplicacao() {
 
     // ---------- chamada ----------
 
+    // evita pedir duas entradas ao mesmo tempo (o estado `entrandoEm` só muda no próximo render)
+    const entrandoRef = useRef<string | null>(null);
+
     async function entrarNaVoz(canal: Canal) {
-        if (!servidor || entrandoEm || voz?.canal.id === canal.id) return;
+        if (!servidor || entrandoEm || entrandoRef.current || voz?.canal.id === canal.id) return;
+        entrandoRef.current = canal.id;
         setEntrandoEm(canal.id);
         try {
             const conexao = await api.tokenVoz(canal.id);
-            if (voz) setSessaoVoz((n) => n + 1);
             setVoz({ canal, servidorId: servidor.id, servidorNome: servidor.nome, conexao, desde: Date.now() });
             // o gateway avisa os outros que você entrou (ENTROU_NA_CALL); nada a recarregar
         } catch (err) {
             tratarErro(err);
         } finally {
+            entrandoRef.current = null;
             setEntrandoEm(null);
         }
     }
+
+    // call do hall do mundo 3D (hall + corredor do andar). mudo: entra com o microfone desligado
+    // (quem chega no 3D vindo da tela normal não sai falando com quem está passando)
+    async function entrarNoHall(opcoes?: { mudo?: boolean }) {
+        if (!servidor) return;
+        const id = `hall-${servidor.id}`;
+        if (entrandoRef.current || voz?.canal.id === id) return;
+        entrandoRef.current = id;
+        setEntrandoEm(id);
+        try {
+            const conexao = await api.tokenHall(servidor.id);
+            if (opcoes?.mudo) setMicPreferido(false);
+            setVoz({
+                canal: { id, nome: "Hall", tipo: "VOZ" },
+                servidorId: servidor.id,
+                servidorNome: servidor.nome,
+                conexao,
+                desde: Date.now(),
+                hall: true,
+            });
+        } catch (err) {
+            tratarErro(err);
+        } finally {
+            entrandoRef.current = null;
+            setEntrandoEm(null);
+        }
+    }
+
+    // sair do 3D: a call do hall só existe lá dentro (numa sala de verdade, continua)
+    const fecharMundo = useCallback(() => {
+        setMundoAberto(false);
+        setVoz((v) => (v?.hall ? null : v));
+    }, []);
 
     // clicar numa sala de voz já entra nela; num canal de texto, abre o chat
     function abrirCanal(canal: Canal) {
@@ -249,12 +290,17 @@ function Aplicacao() {
 
     function abrirChamada() {
         if (!voz) return;
+        if (voz.hall) {
+            setMundoAberto(true);
+            return;
+        }
         irParaServidor(voz.servidorId);
         selecionarCanal(voz.servidorId, voz.canal);
     }
 
     async function sairDaConta() {
         setVoz(null);
+        setMundoAberto(false);
         await api.sair().catch(() => {});
         setEu(null);
         setServidores(null);
@@ -369,6 +415,14 @@ function Aplicacao() {
     );
     if (servidor) {
         itensPaleta.push({
+            id: "mundo-3d",
+            grupo: "Ações",
+            titulo: mundoAberto ? "Sair do mundo 3D" : "Abrir o mundo 3D",
+            dica: servidor.nome,
+            icone: <Building2 size={16} />,
+            acao: () => (mundoAberto ? fecharMundo() : setMundoAberto(true)),
+        });
+        itensPaleta.push({
             id: "membros",
             grupo: "Ações",
             titulo: membrosVisivel ? "Ocultar membros" : "Mostrar membros",
@@ -454,7 +508,6 @@ function Aplicacao() {
         // entrar/sair só liga e desliga a conexão; trocar direto de sala muda a key
         // e cria uma conexão nova (desconecta da antiga e conecta na nova)
         <LiveKitRoom
-            key={sessaoVoz}
             serverUrl={voz?.conexao.url}
             token={voz?.conexao.token}
             connect={!!voz}
@@ -466,64 +519,107 @@ function Aplicacao() {
             onError={aoErroNaSala}
             onMediaDeviceFailure={aoFalharDispositivo}
         >
-            <ControleVozProvider micPreferido={micPreferido} setMicPreferido={setMicPreferido} surdo={surdo} setSurdo={setSurdo}>
+            <ControleVozProvider
+                micPreferido={micPreferido}
+                setMicPreferido={setMicPreferido}
+                surdo={surdo}
+                setSurdo={setSurdo}
+                audioEspacial={mundoAberto}
+            >
                 <ChatSalaProvider desde={voz?.desde ?? null}>
-                    <div className="navegacao">
-                        <BarraServidores
-                            servidores={servidores ?? []}
-                            atualId={servidorId}
-                            servidorDaChamada={voz?.servidorId ?? null}
-                            onEscolher={irParaServidor}
-                            onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
-                        />
-                        <PainelCanais
-                            servidor={servidor}
-                            carregando={servidores === null || (!!servidorId && !servidor)}
-                            canalAtualId={canalAtual?.id ?? null}
-                            voz={voz}
-                            entrandoEm={entrandoEm}
-                            eu={eu}
-                            souAdmin={souAdmin}
-                            membros={membros}
-                            onCanal={abrirCanal}
-                            onApagarCanal={apagarCanal}
-                            onConvidar={() => setModal({ tipo: "convidar" })}
-                            onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
-                            onAbrirChamada={abrirChamada}
-                            onSairChamada={sairDaVoz}
-                            onSairConta={sairDaConta}
-                        />
-                    </div>
+                    <YoutubeSalaProvider canalId={voz ? voz.canal.id : null} noMundo={mundoAberto}>
+                        <ControleSalaProvider canalId={voz ? voz.canal.id : null}>
+                            <div className="navegacao">
+                                <BarraServidores
+                                    servidores={servidores ?? []}
+                                    atualId={servidorId}
+                                    servidorDaChamada={voz?.servidorId ?? null}
+                                    onEscolher={irParaServidor}
+                                    onAdicionar={() => setModal({ tipo: "servidor", aba: "criar" })}
+                                />
+                                <PainelCanais
+                                    servidor={servidor}
+                                    carregando={servidores === null || (!!servidorId && !servidor)}
+                                    canalAtualId={canalAtual?.id ?? null}
+                                    voz={voz}
+                                    entrandoEm={entrandoEm}
+                                    eu={eu}
+                                    souAdmin={souAdmin}
+                                    membros={membros}
+                                    onCanal={abrirCanal}
+                                    onApagarCanal={apagarCanal}
+                                    onConvidar={() => setModal({ tipo: "convidar" })}
+                                    onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
+                                    onAbrirChamada={abrirChamada}
+                                    onSairChamada={sairDaVoz}
+                                    onSairConta={sairDaConta}
+                                    onMundo3D={() => {
+                                        setMenuAberto(false);
+                                        setMundoAberto(true);
+                                    }}
+                                />
+                            </div>
 
-                    {menuAberto && <div className="fundo-escuro" onClick={() => setMenuAberto(false)} />}
+                            {menuAberto && <div className="fundo-escuro" onClick={() => setMenuAberto(false)} />}
 
-                    <main className="principal">{conteudo}</main>
+                            <main className="principal">{conteudo}</main>
 
-                    {mostrarMembros && servidor && (
-                        <>
-                            <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
-                            <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
-                        </>
-                    )}
+                            {mostrarMembros && servidor && (
+                                <>
+                                    <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
+                                    <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
+                                </>
+                            )}
 
-                    {modal?.tipo === "servidor" && (
-                        <NovoServidor abaInicial={modal.aba} onFechar={() => setModal(null)} onPronto={aoCriarOuEntrarServidor} />
-                    )}
-                    {modal?.tipo === "convidar" && servidor && (
-                        <Convidar servidor={servidor} onFechar={() => setModal(null)} />
-                    )}
-                    {modal?.tipo === "canal" && servidor && (
-                        <NovoCanal
-                            servidorId={servidor.id}
-                            tipoInicial={modal.tipoCanal}
-                            onFechar={() => setModal(null)}
-                            onCriado={aoCriarCanal}
-                        />
-                    )}
-                    {paletaAberta && <Paleta itens={itensPaleta} onFechar={() => setPaletaAberta(false)} />}
+                            {modal?.tipo === "servidor" && (
+                                <NovoServidor abaInicial={modal.aba} onFechar={() => setModal(null)} onPronto={aoCriarOuEntrarServidor} />
+                            )}
+                            {modal?.tipo === "convidar" && servidor && (
+                                <Convidar servidor={servidor} onFechar={() => setModal(null)} />
+                            )}
+                            {modal?.tipo === "canal" && servidor && (
+                                <NovoCanal
+                                    servidorId={servidor.id}
+                                    tipoInicial={modal.tipoCanal}
+                                    onFechar={() => setModal(null)}
+                                    onCriado={aoCriarCanal}
+                                />
+                            )}
+                            {mundoAberto && (
+                                <Suspense fallback={<MundoCarregando />}>
+                                    <Mundo3D
+                                        servidor={servidor}
+                                        servidores={servidores ?? []}
+                                        eu={eu}
+                                        membros={membros}
+                                        voz={voz}
+                                        entrandoEm={entrandoEm}
+                                        onEntrarSala={abrirCanal}
+                                        onSairSala={sairDaVoz}
+                                        onEntrarHall={entrarNoHall}
+                                        onTrocarAndar={irParaServidor}
+                                    onMembroDesconhecido={recarregarServidor}
+                                        onFechar={fecharMundo}
+                                    />
+                                </Suspense>
+                            )}
+                            {paletaAberta && <Paleta itens={itensPaleta} onFechar={() => setPaletaAberta(false)} />}
+                        </ControleSalaProvider>
+                    </YoutubeSalaProvider>
                 </ChatSalaProvider>
             </ControleVozProvider>
         </LiveKitRoom>
+    );
+}
+
+function MundoCarregando() {
+    return (
+        <div className="mundo">
+            <div className="mundo-carregando">
+                <Loader2 size={20} className="girar" />
+                <span>Abrindo o prédio…</span>
+            </div>
+        </div>
     );
 }
 

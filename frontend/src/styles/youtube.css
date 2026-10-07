@@ -1,0 +1,193 @@
+/* =========================================================
+   YouTube junto: player sincronizado, controles e painel
+   ========================================================= */
+
+.youtube-player {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #000;
+}
+
+.youtube-player-video,
+.youtube-player-video iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+/* os controles do YouTube ficam desligados: clicar no vídeo pausa/continua pra sala toda */
+.youtube-player-clique {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+}
+
+.youtube-player-aviso {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 90%;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--texto);
+    background: rgba(9, 9, 11, 0.82);
+    pointer-events: none;
+}
+
+/* na TV do 3D o player tem 1280 px e fica pequeno na tela: aviso maior */
+.youtube-tv {
+    background: #000;
+}
+
+.youtube-tv .youtube-player-aviso {
+    gap: 14px;
+    padding: 16px 30px;
+    font-size: 30px;
+}
+
+.youtube-tv .youtube-player-aviso svg {
+    width: 30px;
+    height: 30px;
+}
+
+.bloco-youtube {
+    background: #000;
+}
+
+.youtube-controles {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* por cima do vídeo no palco: aparece ao passar o mouse (sempre no toque) */
+.youtube-controles.compacto {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 4px 8px 4px 4px;
+    border-radius: 10px;
+    background: rgba(9, 9, 11, 0.82);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.bloco-youtube:hover .youtube-controles.compacto,
+.bloco-youtube:focus-within .youtube-controles.compacto {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .youtube-controles.compacto {
+        opacity: 1;
+    }
+}
+
+.youtube-barra {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--texto);
+    cursor: pointer;
+}
+
+.youtube-tempo {
+    font-size: 12px;
+    color: var(--texto-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ---------- painel "Assistir junto" (usa o layout do chat da sala) ---------- */
+
+.youtube-corpo {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 16px;
+}
+
+.youtube-link,
+.youtube-atual,
+.youtube-fila {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.youtube-link-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.youtube-fila ul {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.youtube-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.youtube-item img {
+    width: 96px;
+    flex-shrink: 0;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 6px;
+    background: var(--fundo-3);
+}
+
+.youtube-item > div {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.youtube-item strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.youtube-item span {
+    font-size: 12px;
+    color: var(--texto-3);
+}
+
+.youtube-vazio {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--texto-3);
+}
+
+.youtube-parar {
+    align-self: flex-start;
+}

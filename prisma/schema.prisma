@@ -22,6 +22,12 @@ enum Permissao {
   ADMIN
 }
 
+// como a sala de voz é montada no mundo 3D
+enum ModeloSala {
+  PADRAO
+  CINEMA
+}
+
 model Usuario {
   id String @id @db.Uuid @default(uuid(7))
   discordId String @unique @db.VarChar(255)
@@ -73,6 +79,7 @@ model Canal {
   servidorId String @db.Uuid
   nome String @db.VarChar(50)
   tipo TipoCanal
+  modelo ModeloSala @default(PADRAO)
   criadoEm DateTime @default(now())
 
   servidor Servidor @relation(fields: [servidorId],references: [id], onDelete: Cascade)

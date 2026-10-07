@@ -1,0 +1,210 @@
+/* =========================================================
+   Controle da sala (o "tablet"): TV, som, luzes e YouTube
+   ========================================================= */
+
+.controle-abas {
+    display: flex;
+    gap: 4px;
+    margin: 10px 12px 0;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--fundo-3);
+}
+
+.controle-abas button {
+    flex: 1;
+    height: 30px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--texto-3);
+    transition: background 0.12s, color 0.12s;
+}
+
+.controle-abas button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+.controle-corpo {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 16px;
+}
+
+.controle-corpo section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.controle-opcoes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.controle-opcao {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    text-align: left;
+    border: 1px solid var(--borda-2);
+    background: var(--fundo-2);
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.controle-opcao:hover:not(:disabled) {
+    background: var(--hover);
+}
+
+.controle-opcao.ativo {
+    border-color: var(--texto-2);
+    background: var(--ativo);
+}
+
+.controle-opcao:disabled {
+    opacity: 0.45;
+}
+
+.controle-opcao-icone {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    color: var(--texto-2);
+    background: var(--fundo-4);
+}
+
+.controle-opcao.ativo .controle-opcao-icone {
+    color: var(--fundo-0);
+    background: var(--texto);
+}
+
+.controle-opcao-texto {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.controle-opcao-texto strong {
+    font-size: 13.5px;
+}
+
+.controle-opcao-texto small {
+    font-size: 12px;
+    color: var(--texto-3);
+}
+
+.controle-volume {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--texto-2);
+}
+
+.controle-volume input {
+    flex: 1;
+    accent-color: var(--texto);
+}
+
+.controle-volume span {
+    width: 38px;
+    font-size: 12px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.controle-alternar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.controle-alternar input {
+    margin-top: 3px;
+    accent-color: var(--texto);
+}
+
+.controle-alternar span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.controle-alternar strong {
+    font-size: 13.5px;
+}
+
+.controle-alternar small {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--texto-3);
+}
+
+.controle-segmentos {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--fundo-3);
+}
+
+.controle-segmentos button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--texto-3);
+}
+
+.controle-segmentos button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+/* prévia ao vivo da tela compartilhada, na opção de mandar pra TV */
+.controle-previa {
+    width: 76px;
+    height: 43px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 7px;
+    background: #000;
+    box-shadow: 0 0 0 1px var(--borda-3);
+}
+
+.controle-previa video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.controle-opcao.ativo .controle-previa {
+    box-shadow: 0 0 0 2px var(--texto);
+}
+
+.controle-aviso {
+    margin: auto;
+    padding: 24px;
+    max-width: 320px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--texto-2);
+}
