@@ -186,6 +186,16 @@ kbd {
     color: var(--texto);
 }
 
+/* ação que não tem volta (apagar) */
+.botao-perigo {
+    background: var(--perigo);
+    color: #fff;
+}
+
+.botao-perigo:hover:not(:disabled) {
+    background: #ef5f64;
+}
+
 .botao-grande {
     height: 44px;
     padding: 0 20px;

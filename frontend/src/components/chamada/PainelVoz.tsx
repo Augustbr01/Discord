@@ -1,6 +1,7 @@
-import { useConnectionState, useTrackToggle } from "@livekit/components-react";
-import { ConnectionState, Track } from "livekit-client";
+import { useConnectionState } from "@livekit/components-react";
+import { ConnectionState } from "livekit-client";
 import { MonitorUp, MonitorX, PhoneOff, Signal, Video, VideoOff } from "lucide-react";
+import { useControleVoz } from "../../contexto/ControleVoz";
 import { useAgora } from "../../hooks/useAgora";
 import { cronometro } from "../../lib/util";
 import type { Voz } from "../../tipos";
@@ -11,12 +12,8 @@ type Props = { voz: Voz; onAbrir: () => void; onSair: () => void };
 // fica no rodapé da lista de canais enquanto você está numa sala
 export function PainelVoz({ voz, onAbrir, onSair }: Props) {
     const estado = useConnectionState();
-    const camera = useTrackToggle({ source: Track.Source.Camera, onDeviceError: () => {} });
-    const tela = useTrackToggle({
-        source: Track.Source.ScreenShare,
-        captureOptions: { audio: true, selfBrowserSurface: "exclude" },
-        onDeviceError: () => {},
-    });
+    // mesmo estado da barra da chamada (e a tela usa a qualidade escolhida lá)
+    const { camera, tela } = useControleVoz();
     const agora = useAgora();
 
     const conectado = estado === ConnectionState.Connected;
@@ -42,20 +39,21 @@ export function PainelVoz({ voz, onAbrir, onSair }: Props) {
 
             <div className="painel-voz-acoes">
                 <button
-                    className={`painel-voz-botao ${camera.enabled ? "ligado" : ""}`}
-                    onClick={() => camera.toggle()}
-                    disabled={!conectado || camera.pending}
+                    className={`painel-voz-botao ${camera.ligada ? "ligado" : ""}`}
+                    onClick={camera.alternar}
+                    disabled={!conectado || camera.pendente}
                 >
-                    {camera.enabled ? <Video size={16} /> : <VideoOff size={16} />}
+                    {camera.ligada ? <Video size={16} /> : <VideoOff size={16} />}
                     Câmera
                 </button>
                 <button
-                    className={`painel-voz-botao ${tela.enabled ? "ligado" : ""}`}
-                    onClick={() => tela.toggle()}
-                    disabled={!conectado || tela.pending}
+                    className={`painel-voz-botao ${tela.ativa ? "ligado" : ""}`}
+                    onClick={tela.alternar}
+                    disabled={!conectado || tela.pendente || !tela.suportada}
+                    title={tela.suportada ? undefined : "Seu navegador não permite compartilhar a tela"}
                 >
-                    {tela.enabled ? <MonitorX size={16} /> : <MonitorUp size={16} />}
-                    Tela
+                    {tela.ativa ? <MonitorX size={16} /> : <MonitorUp size={16} />}
+                    {tela.ativa ? "Parar" : "Tela"}
                 </button>
             </div>
         </div>

@@ -1,10 +1,12 @@
 // Todas as chamadas ao backend ficam aqui. Se mudar uma rota no Fastify, ajuste só este arquivo.
 
-export type Usuario = { id: string; nome: string; avatarUrl: string | null };
+// entrou_em: quando a pessoa criou a conta no Liberdade (só vem nos membros do GET /servidor/:id)
+export type Usuario = { id: string; nome: string; avatarUrl: string | null; entrou_em?: string };
 export type Permissao = "ADMIN" | "MEMBRO";
 export type TipoCanal = "TEXTO" | "VOZ";
-// participantes: quem está na sala agora (só canais de voz, quando o back mandar)
-export type Canal = { id: string; nome: string; tipo: TipoCanal; participantes?: Usuario[] };
+// participantes: quem está na sala agora; telas: ids de quem está compartilhando a tela
+// (os dois só em canais de voz)
+export type Canal = { id: string; nome: string; tipo: TipoCanal; participantes?: Usuario[]; telas?: string[] };
 export type Membro = { permissao: Permissao; usuario: Usuario };
 export type ServidorResumo = { id: string; nome: string; iconeUrl: string | null };
 export type ServidorDetalhe = ServidorResumo & {
@@ -26,8 +28,12 @@ export type Mensagem = {
     autor: Usuario;
 };
 
-// igual ao VarChar(200) do model Mensagem
-export const LIMITE_MENSAGEM = 200;
+// igual ao VarChar(1000) do model Mensagem
+export const LIMITE_MENSAGEM = 1000;
+
+// iguais ao schema da rota de avatar e ao limits.fileSize do multipart no back
+export const TIPOS_AVATAR = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+export const LIMITE_AVATAR = 4 * 1024 * 1024;
 
 export class ErroApi extends Error {
     status: number;
@@ -41,8 +47,9 @@ export class ErroApi extends Error {
 async function chamar<T>(caminho: string, init: RequestInit = {}): Promise<T> {
     const res = await fetch(`/api${caminho}`, {
         ...init,
-        // o Fastify recusa Content-Type JSON com corpo vazio, então só manda quando tem corpo
-        headers: init.body ? { "Content-Type": "application/json" } : undefined,
+        // o Fastify recusa Content-Type JSON com corpo vazio, então só manda quando tem corpo.
+        // FormData fica sem: o navegador monta o multipart/form-data (com o boundary) sozinho
+        headers: init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
     });
 
     if (res.status === 204) {
@@ -67,12 +74,21 @@ export const api = {
 
     eu: () => chamar<Usuario>("/dataUser"),
     sair: () => chamar<void>("/logout", post()),
+    // o nome do campo ("avatar") precisa bater com o body do schema no back
+    atualizarAvatar: (arquivo: File) => {
+        const form = new FormData();
+        form.append("avatar", arquivo);
+        return chamar<Usuario>("/atualizar/imagem", { method: "POST", body: form });
+    },
+    // apaga a foto do R2 e volta pro avatar padrão do Discord
+    removerAvatar: () => chamar<Usuario>("/excluir/imagem", post()),
 
     listarServidores: () => chamar<ServidorResumo[]>("/servidor/listar"),
     obterServidor: async (id: string): Promise<ServidorDetalhe> => {
         // o back manda `pessoasVoz: { canalId: [usuarioId] }`; aqui cruzamos com os
-        // membros pra virar o `participantes: Usuario[]` que o painel de canais já espera
-        const bruto = await chamar<ServidorDetalhe & { pessoasVoz?: Record<string, string[]> }>(`/servidor/${id}`);
+        // membros pra virar o `participantes: Usuario[]` que o painel de canais já espera.
+        // `telas` (mesmo formato: { canalId: [usuarioId] }) diz quem está compartilhando a tela
+        const bruto = await chamar<ServidorDetalhe & { pessoasVoz?: Record<string, string[]>; telas?: Record<string, string[]> }>(`/servidor/${id}`);
         const porId = new Map(bruto.membros.map((m) => [m.usuario.id, m.usuario]));
         const canais = bruto.canais.map((c) =>
             c.tipo === "VOZ"
@@ -81,12 +97,16 @@ export const api = {
                       participantes: (bruto.pessoasVoz?.[c.id] ?? [])
                           .map((uid) => porId.get(uid))
                           .filter((u): u is Usuario => u !== undefined),
+                      telas: bruto.telas?.[c.id] ?? [],
                   }
                 : c,
         );
         return { ...bruto, canais };
     },
     criarServidor: (nomeServidor: string) => chamar<ServidorResumo>("/servidor/criar", post({ nomeServidor })),
+    // só admin; o back avisa os membros com UPDATE_SERVER
+    editarServidor: (idServidor: string, nome: string) =>
+        chamar<{ id: string; nome: string }>("/servidor/editar", post({ idServidor, nomeCanal: nome })),
     criarCanal: (servidorId: string, nomeCanal: string, tipoSala: TipoCanal) =>
         chamar<Canal>("/servidor/sala-criar", post({ servidorId, nomeCanal, tipoSala })),
     apagarCanal: (canalId: string) => chamar<void>(`/servidor/sala-deletar/${canalId}`, { method: "DELETE" }),
@@ -104,6 +124,12 @@ export const api = {
     },
     enviarMensagem: (canalId: string, conteudo: string) =>
         chamar<Mensagem>("/servidor/mensagem/criar", post({ canalId, mensagem: conteudo })),
+    // só o autor; o back avisa o servidor com MENSAGEM_EDITADA
+    editarMensagem: (mensagemId: string, canalId: string, conteudo: string) =>
+        chamar<Mensagem>("/servidor/editar/mensagem", post({ mensagemId, canalId, mensagem: conteudo })),
+    // só o autor; o back avisa o servidor com MENSAGEM_DELETADA
+    apagarMensagem: (mensagemId: string, canalId: string) =>
+        chamar<void>("/servidor/excluir/mensagem", post({ canalId, mensagemId })),
 
     tokenVoz: (canalId: string) =>
         chamar<ConexaoVoz>(`/livekit/token?${new URLSearchParams({ salaId: canalId })}`),

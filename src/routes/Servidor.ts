@@ -1,7 +1,7 @@
 import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
 import { Permissao,TipoCanal } from "../../generated/prisma/enums";
-import { limparCall, participantesDaCall } from "../eventosCall";
+import { limparCall, participantesDaCall, telasDaCall } from "../eventosCall";
 import { publicarParaServidor } from "./eventosConexao";
 import { roomService } from "../config/RoomService";
 export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
@@ -87,7 +87,7 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         }
     })
 
-    fastify.post("/servidor/mensagem/criar", {schema: {body: Type.Object({canalId: Type.String(),mensagem:Type.String({minLength: 1,maxLength:200})})}} ,async (req,rep) => {
+    fastify.post("/servidor/mensagem/criar", {schema: {body: Type.Object({canalId: Type.String(),mensagem:Type.String({minLength: 1,maxLength:1000})})}} ,async (req,rep) => {
         const {canalId,mensagem} = req.body;
         const usuarioId = req.user.id;
 
@@ -98,24 +98,60 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         
         const createMsg = await prisma.mensagem.create({data: {autorId:usuarioId,canalId:canalId,conteudo:mensagem},select: {id:true,conteudo:true,criadoEm:true,editadaEm:true,autor: {select: {id:true,nome:true,avatarUrl:true}}}});
 
-        await publicarParaServidor(canal.servidorId,{tipo:"MENSAGEM_CRIADA",servidor_id:canal.servidorId,canalId,mensagem: {id:createMsg.id,editadaEm:null,conteudo:createMsg.conteudo,criadoEm:createMsg.criadoEm,autor: {id:createMsg.autor.id,nome:createMsg.autor.nome,avatarUrl:createMsg.autor.avatarUrl}}});
+        await publicarParaServidor(canal.servidorId,{tipo:"MENSAGEM_CRIADA",servidorId:canal.servidorId,canalId,mensagem: {id:createMsg.id,editadaEm:null,conteudo:createMsg.conteudo,criadoEm:createMsg.criadoEm,autor: {id:createMsg.autor.id,nome:createMsg.autor.nome,avatarUrl:createMsg.autor.avatarUrl}}});
 
         return rep.code(201).send(createMsg);
     })
+    
+    fastify.post("/servidor/editar/mensagem", {schema: {body: Type.Object({mensagemId:Type.String(),canalId:Type.String(),mensagem:Type.String({minLength: 1, maxLength:1000})})}}, async (req,rep) => {
+        const {mensagem,mensagemId,canalId} = req.body;
+        const idUser = req.user.id;
+        const isMembro = await prisma.canal.findUnique({where:{mensagens: {some: {id:mensagemId,autorId:idUser}},id:canalId,servidor: {membros: {some: {usuarioId:idUser}}}},select: {servidorId:true}});
 
-    fastify.post("/servidor/editar", {schema: {body:Type.Object({idServidor: Type.String(),nomeCanal:Type.String({minLength: 1, maxLength: 50})})}} ,async (req,rep) => {
+        if(!isMembro) {
+            return rep.code(401).send({mensagem:"Sem permissão!"});
+        }
+
+        try {
+            const update = await prisma.mensagem.update({where:{id:mensagemId,autorId:idUser},data: {editadaEm: new Date(),conteudo:mensagem},select: {conteudo:true,id:true,criadoEm:true,editadaEm:true,autor: {select: {id:true,nome:true,avatarUrl:true}}}});
+            await publicarParaServidor(isMembro.servidorId,{tipo:"MENSAGEM_EDITADA",servidorId:isMembro.servidorId,canalId:canalId,mensagem:{conteudo:update.conteudo,id:update.id,criadoEm:update.criadoEm,editadaEm:update.editadaEm,autor: {nome:update.autor.nome,id:update.autor.id,avatarUrl:update.autor.avatarUrl}}});
+            return rep.code(201).send(update);
+        }catch(e) {
+            return rep.code(400).send({mensagem:"Falha ao editar mensagem!"});
+        }
+    })
+
+    fastify.post("/servidor/excluir/mensagem", {schema: {body: Type.Object({canalId:Type.String(),mensagemId:Type.String()})}} ,async (req,rep) => {
+        const idUsuario = req.user.id;
+        const {canalId,mensagemId} = req.body;
+        const canal = await prisma.canal.findUnique({where:{id:canalId,mensagens: {some: {id:mensagemId,autorId:idUsuario}},servidor: {membros: {some: {usuarioId:idUsuario}}}},select: {id:true,servidor: {select: {id:true}}}});
+
+        if(!canal) {
+            return rep.code(400).send({mensagem:"Erro ao deletar a mensagem!"});
+        }
+
+        const deleteU = await prisma.mensagem.deleteMany({where:{id:mensagemId,autorId:idUsuario}});
+
+        if(deleteU.count === 0) {
+            return rep.code(400).send({mensagem:"Falha ao deletar mensagem!"});
+        }
+
+        await publicarParaServidor(canal.servidor.id,{tipo:"MENSAGEM_DELETADA",servidorId:canal.servidor.id,canalId:canal.id,mensagem: {id:mensagemId}});
+        
+        return rep.code(201).send({mensagem:"Mensagem deletada com sucesso!"});
+    })
+
+    fastify.post("/servidor/editar", {schema: {body:Type.Object({idServidor: Type.String(),nomeCanal:Type.String({minLength: 1, maxLength: 100})})}} ,async (req,rep) => {
         const {idServidor,nomeCanal} = req.body;
         const idUsuario = req.user.id;
 
-        const updateE = await prisma.servidor.updateMany({where: {id:idServidor, membros: {some: {servidorId:idServidor,usuarioId:idUsuario,permissao: Permissao.ADMIN}}},data: {nome: nomeCanal}});
-
-        if(updateE.count === 0) {
+        try {
+            const updateE = await prisma.servidor.update({where: {id:idServidor, membros: {some: {servidorId:idServidor,usuarioId:idUsuario,permissao: Permissao.ADMIN}}},data: {nome: nomeCanal},select: {id:true,nome:true}});
+            await publicarParaServidor(idServidor,{tipo: "UPDATE_SERVER",servidorId:idServidor,nome:nomeCanal});
+            return rep.code(200).send(updateE);
+        }catch(e) {
             return rep.code(400).send({mensagem:"Ocorreu um erro ao atualizar os dados do servidor"});
         }
-        
-        await publicarParaServidor(idServidor,{tipo: "UPDATE_SERVER",servidorId:idServidor,nome:nomeCanal});
-
-        return rep.code(200).send({})
     })
 
     fastify.get("/servidor/:id", {schema: {params: Type.Object({id:Type.String()})}} ,async (req,rep) => {
@@ -140,7 +176,8 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
                         select: {
                             id:true,
                             nome:true,
-                            avatarUrl:true
+                            avatarUrl:true,
+                            entrou_em:true,
                         }
                     }
                 },
@@ -161,8 +198,9 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         }
 
         const pessoasVoz = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((c) => [c.id,participantesDaCall(c.id)]));
+        const telas = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((v) => [v.id,telasDaCall(v.id)]));
 
-        return rep.code(200).send({...entidade,pessoasVoz});
+        return rep.code(200).send({...entidade,pessoasVoz,telas});
     })
 
     fastify.post("/servidor/convite-criar", {schema: {body: Type.Object({idServidor:Type.String(),expiraEm:Type.Optional(Type.Integer({minimum: 60, maximum: 60 * 60 * 24 * 30}))})}} ,async (req,rep) => {

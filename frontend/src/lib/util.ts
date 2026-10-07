@@ -28,6 +28,12 @@ export function avatarReal(url: string | null | undefined) {
     return url ?? null;
 }
 
+// quem não subiu foto fica com um avatar padrão do Discord (embed/avatars/N.png),
+// sorteado pelo back no cadastro e ao remover a foto
+export function temFotoPropria(url: string | null | undefined) {
+    return !!url && !url.includes("cdn.discordapp.com/embed/avatars/");
+}
+
 // "Sessão" e "sessao" viram a mesma coisa na busca
 export function normalizar(texto: string) {
     return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -81,6 +87,34 @@ export function partesTexto(texto: string) {
     return texto.split(URL_RE).map((valor, i) => ({ link: i % 2 === 1, valor }));
 }
 
+// formatos que o back aceita como imagem (os mesmos da foto de perfil)
+const EXTENSAO_IMAGEM = /\.(png|jpe?g|webp|gif)$/i;
+// mais que isso numa mensagem só vira link (não deixa uma mensagem encher a tela)
+const MAX_IMAGENS = 4;
+
+// links de imagem da mensagem, pra mostrar a imagem em vez de só o link.
+// Só https (http seria bloqueado numa página https) e pela extensão do caminho,
+// então "foto.png?v=2" conta e uma página do Tenor/Giphy (sem extensão) não
+export function imagensDoTexto(texto: string) {
+    const urls: string[] = [];
+    for (const { link, valor } of partesTexto(texto)) {
+        if (!link || urls.includes(valor)) continue;
+        try {
+            const url = new URL(valor);
+            if (url.protocol === "https:" && EXTENSAO_IMAGEM.test(url.pathname)) urls.push(valor);
+        } catch {
+            // parece link mas não é uma URL válida
+        }
+        if (urls.length === MAX_IMAGENS) break;
+    }
+    return urls;
+}
+
+// a mensagem é só imagem (links de imagem e espaços): aí o texto some e fica só a imagem
+export function soImagens(texto: string, imagens: string[]) {
+    return imagens.length > 0 && partesTexto(texto).every((p) => (p.link ? imagens.includes(p.valor) : !p.valor.trim()));
+}
+
 // aceita o link inteiro (https://.../convite/<id>) ou só o id
 export function extrairIdConvite(texto: string) {
     return texto.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? null;
@@ -106,6 +140,14 @@ export function salvarArmazenado(chave: string, valor: unknown) {
         localStorage.setItem(chave, JSON.stringify(valor));
     } catch {
         // sem armazenamento (aba anônima bloqueada etc.): só não lembra
+    }
+}
+
+export function removerArmazenado(chave: string) {
+    try {
+        localStorage.removeItem(chave);
+    } catch {
+        // sem armazenamento: não tinha nada pra remover
     }
 }
 

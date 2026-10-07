@@ -18,7 +18,26 @@ function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
                     if (!usuario || atuais.some((p) => p.id === usuario.id)) return c;
                     return { ...c, participantes: [...atuais, usuario] };
                 }
-                return { ...c, participantes: atuais.filter((p) => p.id !== evento.usuarioId) };
+                // saiu da sala: se estava compartilhando, a tela sai junto
+                return {
+                    ...c,
+                    participantes: atuais.filter((p) => p.id !== evento.usuarioId),
+                    telas: (c.telas ?? []).filter((id) => id !== evento.usuarioId),
+                };
+            }),
+        };
+    }
+    if (evento.tipo === "TELA") {
+        if (!s.canais.some((c) => c.id === evento.canalId)) return s; // não é daqui
+        return {
+            ...s,
+            canais: s.canais.map((c) => {
+                if (c.id !== evento.canalId) return c;
+                const atuais = c.telas ?? [];
+                if (evento.statusTela === "ABRIU") {
+                    return atuais.includes(evento.usuarioId) ? c : { ...c, telas: [...atuais, evento.usuarioId] };
+                }
+                return { ...c, telas: atuais.filter((id) => id !== evento.usuarioId) };
             }),
         };
     }
@@ -30,6 +49,10 @@ function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
     if (evento.tipo === "CANAL_APAGADO") {
         if (!s.canais.some((c) => c.id === evento.canalId)) return s; // não é daqui
         return { ...s, canais: s.canais.filter((c) => c.id !== evento.canalId) };
+    }
+    if (evento.tipo === "UPDATE_SERVER") {
+        if (evento.servidorId !== s.id) return s;
+        return { ...s, nome: evento.nome };
     }
     return s;
 }
