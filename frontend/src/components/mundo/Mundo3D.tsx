@@ -544,7 +544,8 @@ function Andar({
 
                 {voz && barraDaCall && (
                     <div className="mundo-controles">
-                        <Controles onSair={onSairSala} />
+                        {/* no hall não tem compartilhar tela: ela é pra TV de uma sala */}
+                        <Controles onSair={onSairSala} semTela={!!voz.hall} />
                     </div>
                 )}
             </div>
