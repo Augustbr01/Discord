@@ -999,3 +999,33 @@
         display: none;
     }
 }
+
+/* "Desmute o microfone para falar": acima da barra da call, no modo clássico e no 3D */
+.aviso-mutado {
+    position: fixed;
+    left: 50%;
+    bottom: 96px;
+    translate: -50% 0;
+    z-index: 140;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 999px;
+    background: var(--fundo-3);
+    border: 1px solid var(--perigo);
+    box-shadow: var(--sombra), 0 0 0 4px var(--perigo-suave);
+    color: var(--texto);
+    font-size: 13.5px;
+    font-weight: 600;
+    animation: surgir 0.2s ease;
+}
+
+.aviso-mutado svg {
+    color: var(--perigo);
+    flex-shrink: 0;
+}
+
+.aviso-mutado:hover {
+    background: var(--fundo-4);
+}

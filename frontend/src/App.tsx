@@ -6,6 +6,7 @@ import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
 } from "./api";
+import { AvisoMutado } from "./components/chamada/AvisoMutado";
 import { ChatSalaProvider } from "./contexto/ChatSala";
 import { GerenciadorCall, type Destino, type MotivoPerda } from "./lib/gerenciadorCall";
 import { ControleVozProvider } from "./contexto/ControleVoz";
@@ -654,6 +655,8 @@ function Aplicacao() {
                 audioEspacial={mundoAberto}
                 cinema={voz?.canal.modelo === "CINEMA"}
             >
+                {/* "Desmute o microfone para falar" (falou mutado numa call) */}
+                <AvisoMutado />
                 <ChatSalaProvider desde={voz?.desde ?? null}>
                     <FocoChamadaProvider desde={voz?.desde ?? null}>
                         <PerfilProvider
