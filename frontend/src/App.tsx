@@ -1,12 +1,13 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
-import { DisconnectReason, MediaDeviceFailure, ScreenSharePresets, VideoPresets, type RoomOptions } from "livekit-client";
+import { MediaDeviceFailure, ScreenSharePresets, VideoPresets, type RoomOptions } from "livekit-client";
 import { Bird, Building2, Camera, Hash, Loader2, LogOut, PhoneOff, Plus, Settings, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
 import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
 } from "./api";
 import { ChatSalaProvider } from "./contexto/ChatSala";
+import { GerenciadorCall, type Destino, type MotivoPerda } from "./lib/gerenciadorCall";
 import { ControleVozProvider } from "./contexto/ControleVoz";
 import { FocoChamadaProvider } from "./contexto/FocoChamada";
 import { PerfilProvider } from "./contexto/Perfil";
@@ -62,6 +63,11 @@ const OPCOES_SALA: RoomOptions = {
     },
 };
 
+// a call como o gerenciador entende: a chave é o nome da sala no LiveKit (canal ou hall-<servidor>)
+function destinoDaCall(id: string, servidorId: string, hall: boolean): Destino {
+    return { chave: id, token: () => (hall ? api.tokenHall(servidorId) : api.tokenVoz(id)) };
+}
+
 // nomes dos erros do navegador ao abrir microfone/câmera
 const ERROS_DE_DISPOSITIVO = new Set(["NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError", "AbortError"]);
 
@@ -111,8 +117,12 @@ function Aplicacao() {
     const [naoLidos, setNaoLidos] = useState<Record<string, number>>({});
     // último canal aberto em cada servidor (só os de texto são lembrados entre visitas)
     const [canalPorServidor, setCanalPorServidor] = useState<Record<string, string>>(() => lerArmazenado(CHAVE_CANAIS, {}));
+    // a call em que você quer estar; quem leva a conexão até lá é o gerenciador (lib/gerenciadorCall)
     const [voz, setVoz] = useState<Voz | null>(null);
-    const [entrandoEm, setEntrandoEm] = useState<string | null>(null);
+    const [gerenciador] = useState(() => new GerenciadorCall(OPCOES_SALA));
+    const estadoCall = useSyncExternalStore(gerenciador.assinar, gerenciador.lerEstado);
+    // entrando = pediu a call e a conexão ainda não chegou nela
+    const entrandoEm = voz && estadoCall.conectadoEm !== voz.canal.id ? voz.canal.id : null;
     const [micPreferido, setMicPreferido] = useState(() => lerArmazenado(CHAVE_MIC, true));
     const [surdo, setSurdo] = useState(false);
     // em tela estreita a lista de membros cobre o conteúdo, então sempre começa fechada
@@ -300,51 +310,55 @@ function Aplicacao() {
 
     // ---------- chamada ----------
 
-    // evita pedir duas entradas ao mesmo tempo (o estado `entrandoEm` só muda no próximo render)
-    const entrandoRef = useRef<string | null>(null);
-
-    async function entrarNaVoz(canal: Canal) {
-        if (!servidor || entrandoEm || entrandoRef.current || voz?.canal.id === canal.id) return;
-        entrandoRef.current = canal.id;
-        setEntrandoEm(canal.id);
-        try {
-            const conexao = await api.tokenVoz(canal.id);
-            setVoz({ canal, servidorId: servidor.id, servidorNome: servidor.nome, conexao, desde: Date.now() });
-            // o gateway avisa os outros que você entrou (ENTROU_NA_CALL); nada a recarregar
-        } catch (err) {
-            tratarErro(err);
-        } finally {
-            entrandoRef.current = null;
-            setEntrandoEm(null);
-        }
+    // entrar numa call é só dizer qual: muda na hora aqui, e o gerenciador conecta (o token,
+    // a troca e as falhas são com ele). O gateway avisa os outros (ENTROU_NA_CALL)
+    function entrarNaVoz(canal: Canal) {
+        if (!servidor || voz?.canal.id === canal.id) return;
+        setVoz({ canal, servidorId: servidor.id, servidorNome: servidor.nome, desde: Date.now() });
     }
 
     // call do hall do mundo 3D (hall + corredor do andar). mudo: entra com o microfone desligado
     // (quem chega no 3D vindo da tela normal não sai falando com quem está passando)
-    async function entrarNoHall(opcoes?: { mudo?: boolean }) {
+    function entrarNoHall(opcoes?: { mudo?: boolean }) {
         if (!servidor) return;
         const id = `hall-${servidor.id}`;
-        if (entrandoRef.current || voz?.canal.id === id) return;
-        entrandoRef.current = id;
-        setEntrandoEm(id);
-        try {
-            const conexao = await api.tokenHall(servidor.id);
-            if (opcoes?.mudo) setMicPreferido(false);
-            setVoz({
-                canal: { id, nome: "Hall", tipo: "VOZ" },
-                servidorId: servidor.id,
-                servidorNome: servidor.nome,
-                conexao,
-                desde: Date.now(),
-                hall: true,
-            });
-        } catch (err) {
-            tratarErro(err);
-        } finally {
-            entrandoRef.current = null;
-            setEntrandoEm(null);
-        }
+        if (voz?.canal.id === id) return;
+        if (opcoes?.mudo) setMicPreferido(false);
+        setVoz({ canal: { id, nome: "Hall", tipo: "VOZ" }, servidorId: servidor.id, servidorNome: servidor.nome, desde: Date.now(), hall: true });
     }
+
+    // a call pedida vai pro gerenciador
+    const idVoz = voz?.canal.id;
+    const vozHall = !!voz?.hall;
+    const vozServidor = voz?.servidorId;
+    useEffect(() => {
+        gerenciador.ir(idVoz && vozServidor ? destinoDaCall(idVoz, vozServidor, vozHall) : null);
+    }, [gerenciador, idVoz, vozServidor, vozHall]);
+
+    // a call não deu (ou caiu de vez): volta pra "sem call" e avisa
+    useEffect(() => {
+        const avisos: Record<MotivoPerda, string> = {
+            "sem-permissao": "Você não tem acesso a essa sala de voz.",
+            falhou: "Não foi possível conectar à sala de voz.",
+            "outra-aba": "Você entrou na call em outra aba ou aparelho.",
+            removido: "Você foi desconectado da sala.",
+        };
+        gerenciador.onPerda = (chave, motivo) => {
+            setVoz((v) => (v?.canal.id === chave ? null : v));
+            toast.erro(avisos[motivo]);
+        };
+        return () => {
+            gerenciador.onPerda = null;
+        };
+    }, [gerenciador, toast]);
+
+    // ao abrir o 3D: busca antes os tokens das salas do andar e do hall (trocar de sala fica rápido)
+    const aquecerCalls = useCallback((servidorAndar: string, canaisVoz: string[]) => {
+        gerenciador.aquecer([
+            destinoDaCall(`hall-${servidorAndar}`, servidorAndar, true),
+            ...canaisVoz.map((id) => destinoDaCall(id, servidorAndar, false)),
+        ]);
+    }, [gerenciador]);
 
     // sair do 3D: a call do hall só existe lá dentro (numa sala de verdade, continua)
     const fecharMundo = useCallback(() => {
@@ -383,23 +397,9 @@ function Aplicacao() {
         setServidorId(null);
     }
 
-    const idVoz = voz?.canal.id;
-
-    // callbacks estáveis: o LiveKitRoom refaz a conexão quando eles mudam
-    const aoDesconectar = useCallback((motivo?: DisconnectReason) => {
-        // ignora o aviso da sala antiga quando você troca de sala
-        setVoz((v) => (v && v.canal.id === idVoz ? null : v));
-        if (motivo !== undefined && motivo !== DisconnectReason.CLIENT_INITIATED) {
-            toast.info("Você foi desconectado da sala.");
-        }
-    }, [idVoz, toast]);
-
+    // erros do LiveKitRoom (a conexão em si é com o gerenciador, que avisa pelo onPerda)
     const aoErroNaSala = useCallback((err: Error) => {
-        if (err.name === "ConnectionError") {
-            setVoz(null);
-            toast.erro("Não foi possível conectar à sala de voz.");
-            return;
-        }
+        if (err.name === "ConnectionError") return;
         // falha de microfone/câmera (sem permissão, sem aparelho, em uso por outro programa)
         // já é avisada pelo onMediaDeviceFailure
         if (ERROS_DE_DISPOSITIVO.has(err.name)) return;
@@ -633,17 +633,16 @@ function Aplicacao() {
 
     return (
         // a sala de voz fica em volta de tudo: a chamada continua enquanto você navega.
-        // entrar/sair só liga e desliga a conexão; trocar direto de sala muda a key
-        // e cria uma conexão nova (desconecta da antiga e conecta na nova)
+        // A conexão é do gerenciador (sem token aqui o LiveKitRoom não conecta nem desconecta
+        // sozinho); ele só dá o contexto pros componentes e publica o microfone ao conectar
         <LiveKitRoom
-            serverUrl={voz?.conexao.url}
-            token={voz?.conexao.token}
-            connect={!!voz}
+            room={gerenciador.room}
+            serverUrl={undefined}
+            token={undefined}
+            connect
             audio={micPreferido && !surdo}
             video={false}
-            options={OPCOES_SALA}
             className={`app ${menuAberto ? "menu-aberto" : ""} ${mostrarMembros ? "com-membros" : ""}`}
-            onDisconnected={aoDesconectar}
             onError={aoErroNaSala}
             onMediaDeviceFailure={aoFalharDispositivo}
         >
@@ -749,9 +748,11 @@ function Aplicacao() {
                                                 membros={membros}
                                                 voz={voz}
                                                 entrandoEm={entrandoEm}
+                                                tentandoDeNovo={!!entrandoEm && estadoCall.falhas > 0}
                                                 onEntrarSala={abrirCanal}
                                                 onSairSala={sairDaVoz}
                                                 onEntrarHall={entrarNoHall}
+                                                onAquecerCalls={aquecerCalls}
                                                 onTrocarAndar={irParaServidor}
                                                 onMembroDesconhecido={recarregarServidor}
                                                 onFechar={fecharMundo}

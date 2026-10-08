@@ -2,9 +2,9 @@
 // de verdade. Entrar pela porta = entrar na call; sair dela = sair da call.
 // Carregado sob demanda (o three.js só baixa quando alguém abre o 3D).
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type RefObject } from "react";
-import { VideoTrack, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
-import { Track } from "livekit-client";
 import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Settings, Tablet, X } from "lucide-react";
+import { VideoTrack, useConnectionState, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
+import { ConnectionState, Track } from "livekit-client";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
 import { fonteDaTV, useControleSala } from "../../contexto/ControleSala";
 import { useControleVoz } from "../../contexto/ControleVoz";
@@ -36,6 +36,10 @@ type Props = {
     entrandoEm: string | null;
     onEntrarSala: (canal: Canal) => void;
     onSairSala: () => void;
+    // busca antes os tokens das calls do andar (salas e hall): trocar de sala fica rápido
+    onAquecerCalls: (servidorId: string, canaisVoz: string[]) => void;
+    // a conexão com a call falhou e está tentando de novo sozinha
+    tentandoDeNovo: boolean;
     // call do hall do andar (hall + corredor); mudo: entra com o microfone desligado
     onEntrarHall: (opcoes?: { mudo?: boolean }) => void;
     onTrocarAndar: (servidorId: string) => void;
@@ -109,8 +113,8 @@ type PropsAndar = Props & {
 };
 
 function Andar({
-    servidor, servidores, eu, membros, voz, entrandoEm,
-    onEntrarSala, onSairSala, onEntrarHall, onTrocarAndar, onMembroDesconhecido, tunel, chegouAgora,
+    servidor, servidores, eu, membros, voz, entrandoEm, tentandoDeNovo,
+    onEntrarSala, onSairSala, onEntrarHall, onAquecerCalls, onTrocarAndar, onMembroDesconhecido, tunel, chegouAgora,
 }: PropsAndar) {
     const { surdo } = useControleVoz();
     const youtube = useYoutubeSala();
@@ -184,35 +188,66 @@ function Andar({
 
     // ---------- entrar e sair das calls andando ----------
 
-    const atual = useRef({ voz, canais, idsSalas, salaAtual, onEntrarSala, onEntrarHall, onSairSala });
-    atual.current = { voz, canais, idsSalas, salaAtual, onEntrarSala, onEntrarHall, onSairSala };
-
-    // Quando o mundo é aberto e o jogador não está numa sala, ele entra no hall da call
-    // com microfone mutado por padrão. Isso mantém o hall como a "call de contexto" do 3D,
-    // sem resetar a posição do jogador nem criar um teleporte artificial.
     useEffect(() => {
-        const v = atual.current.voz;
-        const jaAqui = !!v && (atual.current.idsSalas.has(v.canal.id) || (!!v.hall && v.servidorId === servidor.id));
-        if (!jaAqui) atual.current.onEntrarHall({ mudo: true });
         chegouAgora.current = false;
-    }, [servidor.id]);
+    }, [chegouAgora]);
 
-    // entrou numa sala: troca pra call dela; saiu pro hall/corredor: volta pra call do hall
-    const aoMudarSala = useCallback((id: string | null) => {
-        const a = atual.current;
-        setSalaAtual(id);
-        a.salaAtual = id;
-        if (id) {
-            const canal = a.canais.get(id);
-            if (canal && a.voz?.canal.id !== id) a.onEntrarSala(canal);
-        } else if (a.voz && a.idsSalas.has(a.voz.canal.id)) {
-            a.onEntrarHall({ mudo: true });
+    const aoMudarSala = useCallback((id: string | null) => setSalaAtual(id), []);
+
+    // A call segue o lugar onde você está: dentro de uma sala, a call dela; no hall, no corredor
+    // ou no elevador, a call do hall do andar (entra mutado: quem passa não sai falando).
+    // Aqui só se diz qual call; levar a conexão até lá (fila, troca no meio de outra, quedas)
+    // é com o gerenciador de call (lib/gerenciadorCall), então pedir de novo nunca atrapalha
+    const idHall = `hall-${servidor.id}`;
+    const alvoCall = salaAtual ?? idHall;
+    const callAgora = voz?.canal.id ?? null;
+    // o último pedido, como "pra onde | de onde". Se a entrada falhar (sem permissão, por
+    // exemplo), a call volta pra nenhuma e não fica pedindo em loop — dá pra tentar com E.
+    // Se você sair de propósito (botão de sair), também não volta sozinho
+    const callPedida = useRef<string | null>(null);
+    const entrar = useRef({ onEntrarSala, onEntrarHall, canais });
+    entrar.current = { onEntrarSala, onEntrarHall, canais };
+    useEffect(() => {
+        if (callAgora === alvoCall) {
+            callPedida.current = `${alvoCall}|null`;
+            return;
         }
-    }, []);
+        const pedido = `${alvoCall}|${callAgora}`;
+        if (callPedida.current === pedido) return;
+        // espera um instante: passar pela porta e voltar logo não troca de call à toa
+        // (fora de call, entra na hora)
+        const espera = window.setTimeout(() => {
+            callPedida.current = pedido;
+            const { onEntrarSala: sala, onEntrarHall: hall, canais: lista } = entrar.current;
+            const canal = salaAtual ? lista.get(salaAtual) : undefined;
+            if (canal) sala(canal);
+            else hall({ mudo: true });
+        }, callAgora ? 200 : 0);
+        return () => window.clearTimeout(espera);
+    }, [alvoCall, callAgora, salaAtual]);
+    // "Conectando…": pedida e a conexão ainda não chegou, ou prestes a pedir (não falhou)
+    const conectando = !!salaAtual && (
+        entrandoEm === salaAtual
+        || (callAgora !== salaAtual && callPedida.current !== `${salaAtual}|${callAgora}`)
+    );
 
-    // A troca de call deve seguir a zona real do jogador no mundo 3D, não o estado da voz em si.
-    // Se a chamada muda por reconexão, não mexemos na posição nem no spawn, e o movimento continua
-    // controlando quando sair da sala e entrar no hall ou numa sala de voz.
+    // a barra da call só aparece com a conexão aberta de verdade (deu erro, some). Numa troca de
+    // sala a conexão fecha e reabre em ~0,3 s: só some se ficar um tempo sem, pra não piscar
+    const conectadoNaCall = useConnectionState() === ConnectionState.Connected;
+    const [barraDaCall, setBarraDaCall] = useState(conectadoNaCall);
+    useEffect(() => {
+        if (conectadoNaCall) {
+            setBarraDaCall(true);
+            return;
+        }
+        const t = window.setTimeout(() => setBarraDaCall(false), 800);
+        return () => window.clearTimeout(t);
+    }, [conectadoNaCall]);
+
+    // os tokens das calls deste andar, buscados antes: a troca de sala não espera o backend
+    useEffect(() => {
+        onAquecerCalls(servidor.id, planta.salas.map((s) => s.canalId));
+    }, [onAquecerCalls, servidor.id, planta]);
 
     // ---------- quem aparece no andar ----------
 
@@ -333,7 +368,7 @@ function Andar({
             ? { tecla: "E", texto: "Controle da sala" }
         : foco?.tipo === "assento"
             ? ocupados.has(foco.assentoId ?? "") ? { texto: "Lugar ocupado" } : { tecla: "E", texto: "Sentar" }
-        : salaAtual && entrandoEm === salaAtual ? { texto: "Conectando à call…", carregando: true }
+        : conectando ? { texto: tentandoDeNovo ? "Sem conexão com a call · tentando de novo…" : "Conectando à call…", carregando: true }
         : salaAtual && vozNoAndar !== salaAtual ? { tecla: "E", texto: "Entrar na call" }
         : salaAtual && midia.telasDaCall.length > 0 ? { tecla: "F", texto: "Ver a tela compartilhada" }
         : null;
@@ -507,7 +542,7 @@ function Andar({
                     </div>
                 )}
 
-                {voz && (
+                {voz && barraDaCall && (
                     <div className="mundo-controles">
                         <Controles onSair={onSairSala} />
                     </div>

@@ -1,11 +1,10 @@
-import type { Canal, ConexaoVoz, Membro, Mensagem, Usuario } from "./api";
+import type { Canal, Membro, Mensagem, Usuario } from "./api";
 
 // a chamada em que você está (continua ativa enquanto você navega pelos canais)
 export type Voz = {
     canal: Canal;
     servidorId: string;
     servidorNome: string;
-    conexao: ConexaoVoz;
     desde: number;
     // call do hall do mundo 3D (não é um canal de verdade; some quando você sai do 3D)
     hall?: boolean;
