@@ -385,7 +385,7 @@ function Andar({
     const dica: Dica | null =
         foco?.tipo === "elevador" ? { tecla: "E", texto: "Escolher andar" }
         : foco?.tipo === "texto" ? { tecla: "E", texto: `Abrir #${canais.get(foco.canalId ?? "")?.nome ?? ""}` }
-        : (foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar
+        : foco?.tipo === "tablet" && foco.canalId === vozNoAndar
             ? { tecla: "E", texto: "Controle da sala" }
         : foco?.tipo === "chat" && foco.canalId === vozNoAndar ? { tecla: "E", texto: "Escrever no chat da call" }
         : foco?.tipo === "assento"
@@ -414,7 +414,7 @@ function Andar({
             setControleAberto(null);
             setChatId(null);
             setChatCallAberto(true);
-        } else if ((foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar) {
+        } else if (foco?.tipo === "tablet" && foco.canalId === vozNoAndar) {
             soltarMouse();
             setChatId(null);
             setChatCallAberto(false);

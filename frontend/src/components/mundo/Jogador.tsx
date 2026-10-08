@@ -52,6 +52,8 @@ const SENSIBILIDADE_TOQUE = 0.005;
 // apertar uma destas com o mouse solto já volta pro jogo
 const TECLAS_DE_ANDAR = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 const LIMITE_OLHAR = Math.PI / 2 - 0.02;
+// o quanto a mira pode passar longe do centro do tablet e ainda contar
+const RAIO_MIRA_TABLET = 0.28;
 
 export type ControleToque = {
     // joystick: -1..1 em cada eixo (y negativo = pra frente)
@@ -658,10 +660,11 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         onSala(nova);
     }
 
-    // a mira (o centro da tela) acerta a tela do holograma do chat desta sala?
-    function miraNoChat(it: Interativo, p: Ponto, yaw: number, pitch: number, olhosY: number) {
-        const h = planta.salas.find((s) => s.canalId === it.canalId)?.chat;
-        if (!h) return false;
+    // a mira (o centro da tela) acerta este retângulo em pé (centro, normal pra onde olha, eixo da largura)?
+    function miraNoRetangulo(
+        h: Ponto & { y: number; nx: number; nz: number; ux: number; uz: number; largura: number; altura: number },
+        alcance: number, p: Ponto, yaw: number, pitch: number, olhosY: number,
+    ) {
         // direção da câmera
         const dx = -Math.sin(yaw) * Math.cos(pitch);
         const dy = Math.sin(pitch);
@@ -671,22 +674,45 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         if (deFrente >= -0.05) return false;
         // onde o raio da mira encontra o plano da tela
         const t = ((h.x - p.x) * h.nx + (h.z - p.z) * h.nz) / deFrente;
-        if (t <= 0 || t > it.raio) return false;
+        if (t <= 0 || t > alcance) return false;
         const u = (p.x + dx * t - h.x) * h.ux + (p.z + dz * t - h.z) * h.uz;
         const v = olhosY + dy * t - h.y;
         return Math.abs(u) <= h.largura / 2 && Math.abs(v) <= h.altura / 2;
     }
 
+    // a mira acerta a tela do holograma do chat desta sala?
+    function miraNoChat(it: Interativo, p: Ponto, yaw: number, pitch: number, olhosY: number) {
+        const h = planta.salas.find((s) => s.canalId === it.canalId)?.chat;
+        return !!h && miraNoRetangulo(h, it.raio, p, yaw, pitch, olhosY);
+    }
+
+    // a mira passa perto do tablet desta sala? (uma bola em volta dele: o tablet é pequeno e
+    // mirar no retângulo exato seria chato)
+    function miraNoTablet(it: Interativo, p: Ponto, yaw: number, pitch: number, olhosY: number) {
+        const tb = planta.salas.find((s) => s.canalId === it.canalId)?.tablet;
+        if (!tb) return false;
+        const dx = -Math.sin(yaw) * Math.cos(pitch);
+        const dy = Math.sin(pitch);
+        const dz = -Math.cos(yaw) * Math.cos(pitch);
+        const cx = tb.x - p.x;
+        const cy = tb.y - olhosY;
+        const cz = tb.z - p.z;
+        // até onde o raio anda pra chegar mais perto do centro do tablet
+        const t = cx * dx + cy * dy + cz * dz;
+        if (t <= 0 || t > it.raio) return false;
+        return Math.hypot(cx - dx * t, cy - dy * t, cz - dz * t) <= RAIO_MIRA_TABLET;
+    }
+
     function atualizarFoco(p: Ponto, yaw: number, pitch: number, olhosY: number, sentado: boolean) {
         let melhor: Interativo | null = null;
         let menor = Infinity;
+        // holograma do chat e tablet: só com a mira em cima, e aí ganham dos outros (foi de propósito)
+        let mirado: Interativo | null = null;
         for (const it of planta.interativos) {
-            // holograma do chat: só com a mira em cima dele, e aí ganha dos outros (foi de propósito)
-            if (it.tipo === "chat") {
-                if (miraNoChat(it, p, yaw, pitch, olhosY)) {
-                    melhor = it;
-                    break;
-                }
+            if (it.tipo === "chat" || it.tipo === "tablet") {
+                if (mirado) continue;
+                const mirou = it.tipo === "chat" ? miraNoChat(it, p, yaw, pitch, olhosY) : miraNoTablet(it, p, yaw, pitch, olhosY);
+                if (mirou) mirado = it;
                 continue;
             }
             // sentado, os outros lugares não interessam (levanta com Espaço)
@@ -703,6 +729,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 melhor = it;
             }
         }
+        if (mirado) melhor = mirado;
         const id = melhor?.id ?? null;
         if (id !== foco.current) {
             foco.current = id;

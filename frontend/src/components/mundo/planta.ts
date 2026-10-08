@@ -60,7 +60,7 @@ export type SalaPlanta = {
 };
 
 export type Quadro = Ponto & { canalId: string; rot: number };
-export type Interativo = Ponto & { id: string; raio: number; tipo: "elevador" | "texto" | "tv" | "assento" | "tablet" | "chat"; canalId?: string; assentoId?: string };
+export type Interativo = Ponto & { id: string; raio: number; tipo: "elevador" | "texto" | "assento" | "tablet" | "chat"; canalId?: string; assentoId?: string };
 
 export type Planta = {
     paredes: Parede[];
@@ -302,22 +302,9 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
             z: q.z,
             raio: 1.6,
         })),
-        // TV de cada sala: controla o YouTube junto (só quem está na call daquela sala).
-        // Vale de quase toda a metade da sala do lado da TV (no cinema, da sala toda), olhando pra ela
-        ...salas.map((s): Interativo => {
-            // a tela olha pra (sen rot, cos rot); o ponto fica um pouco à frente dela
-            const recuo = s.modelo === "CINEMA" ? 8 : 2.4;
-            return {
-                id: `tv-${s.canalId}`,
-                tipo: "tv",
-                canalId: s.canalId,
-                x: s.tv.x + Math.sin(s.tv.rot) * recuo,
-                z: s.tv.z + Math.cos(s.tv.rot) * recuo,
-                raio: s.modelo === "CINEMA" ? 9 : 4,
-            };
-        }),
         ...assentos.map((a): Interativo => ({ id: `assento-${a.id}`, tipo: "assento", assentoId: a.id, x: a.x, z: a.z, raio: 1.15 })),
-        ...salas.map((s): Interativo => ({ id: `tablet-${s.canalId}`, tipo: "tablet", canalId: s.canalId, x: s.tablet.x, z: s.tablet.z, raio: 1.5 })),
+        // tablet: só com a mira em cima dele (ver Jogador), até 3,6 m dos olhos (alcança do sofá e dos puffs)
+        ...salas.map((s): Interativo => ({ id: `tablet-${s.canalId}`, tipo: "tablet", canalId: s.canalId, x: s.tablet.x, z: s.tablet.z, raio: 3.6 })),
         // holograma do chat: só com a mira em cima da tela dele (ver Jogador), até 9 m
         ...salas.flatMap((s): Interativo[] => (s.chat ? [{ id: `chat-${s.canalId}`, tipo: "chat", canalId: s.canalId, x: s.chat.x, z: s.chat.z, raio: 9 }] : [])),
     ];
