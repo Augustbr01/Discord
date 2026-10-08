@@ -110,36 +110,238 @@
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
 }
 
-.mundo-ajuda {
+/* mouse solto: "clique pra jogar" um pouco acima do centro e o card das teclas embaixo */
+.mundo-pausa {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: 44%;
     translate: -50% -50%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 18px 22px;
+    gap: 12px;
+    width: min(880px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    animation: surgir 0.16s ease;
+}
+
+.mundo-pausa-jogar {
+    position: relative;
+    overflow: hidden;
+    min-width: min(380px, 100%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 22px 14px 16px;
     border-radius: 14px;
-    text-align: center;
-    background: rgba(15, 15, 17, 0.78);
+    background: rgba(15, 15, 17, 0.82);
     border: 1px solid var(--borda-2);
     backdrop-filter: blur(10px);
     box-shadow: var(--sombra);
 }
 
-.mundo-ajuda strong {
+.mundo-pausa-jogar > svg {
+    flex-shrink: 0;
+    padding: 9px;
+    box-sizing: content-box;
+    border-radius: 10px;
+    color: var(--fundo-0);
+    background: var(--texto);
+}
+
+.mundo-pausa-jogar div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mundo-pausa-jogar strong {
     font-size: 16px;
 }
 
-.mundo-ajuda span {
+.mundo-pausa-jogar span {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12.5px;
     color: var(--texto-3);
-    font-size: 13px;
-    line-height: 2;
 }
 
-.mundo-ajuda kbd {
-    margin: 0 2px;
+.mundo-pausa-jogar kbd:first-of-type {
+    margin-left: 3px;
+}
+
+/* logo depois do Esc: o ícone apaga e a barra embaixo esvazia até o navegador liberar o mouse */
+.mundo-pausa-jogar.esperando > svg {
+    color: var(--texto-2);
+    background: var(--fundo-4);
+}
+
+.mundo-pausa-barra {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--texto);
+    transform-origin: left;
+    animation-name: esvaziar;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+
+@keyframes esvaziar {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+
+.mundo-pausa-teclas {
+    width: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 18px 16px;
+    border-radius: 14px;
+    background: rgba(15, 15, 17, 0.82);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--sombra);
+}
+
+.mundo-pausa-teclas > header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--texto-2);
+}
+
+/* a lista de teclas (card da pausa e configurações): cada grupo num bloco */
+.lista-teclas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+}
+
+.lista-teclas section {
+    padding: 12px 14px 14px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.lista-teclas h4 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--texto-3);
+}
+
+/* teclas | ação: a coluna das teclas tem a largura da maior do grupo, e as linhas alinham por ela */
+.lista-teclas dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 14px;
+    margin: 0;
+}
+
+.lista-teclas dl > div {
+    display: contents;
+}
+
+.lista-teclas dt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.lista-teclas dd {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--texto);
+}
+
+.lista-teclas dd small {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--texto-3);
+}
+
+.lista-teclas-junto {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--texto-3);
+}
+
+/* tecla de teclado: com "altura" (a borda de baixo mais grossa) */
+.tecla {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--texto);
+    background: linear-gradient(180deg, #303037, #24242a);
+    border: 1px solid #3c3c44;
+    border-bottom: 3px solid #17171b;
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.tecla-larga {
+    padding: 0 9px;
+}
+
+.tecla-mouse {
+    padding: 0 8px 0 6px;
+    color: var(--texto-2);
+}
+
+/* W em cima, A S D embaixo, como no teclado */
+.teclas-cruz {
+    display: grid;
+    grid-template-columns: repeat(3, 26px);
+    gap: 3px;
+}
+
+.teclas-cruz .tecla {
+    min-width: 0;
+    padding: 0;
+}
+
+/* as quatro com lugar fixo (W A S D, nessa ordem) */
+.teclas-cruz .tecla:nth-child(1) {
+    grid-area: 1 / 2;
+}
+
+.teclas-cruz .tecla:nth-child(2) {
+    grid-area: 2 / 1;
+}
+
+.teclas-cruz .tecla:nth-child(3) {
+    grid-area: 2 / 2;
+}
+
+.teclas-cruz .tecla:nth-child(4) {
+    grid-area: 2 / 3;
 }
 
 /* avisos sem tecla (conectando, lugar ocupado): no meio, em cima da barra da call */
@@ -215,6 +417,7 @@
     height: 40px;
     border-radius: 50%;
 }
+
 
 /* ---------- celular: joystick e arrastar pra olhar ---------- */
 
@@ -700,12 +903,6 @@
     accent-color: var(--texto);
 }
 
-.mundo-config-teclas p {
-    margin: 0;
-    color: var(--texto-3);
-    font-size: 13px;
-    line-height: 2;
-}
 
 .mundo-config-rodape {
     display: flex;

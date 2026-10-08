@@ -2,6 +2,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { RotateCcw, X } from "lucide-react";
 import { CONFIG_PADRAO, LIMITES, mudarConfig, useConfigMundo } from "./config";
+import { ListaTeclas } from "./Teclas";
 
 export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
     const cfg = useConfigMundo();
@@ -90,9 +91,7 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
 
                     <section className="mundo-config-teclas">
                         <h3>Teclas</h3>
-                        <p>
-                            <kbd>Shift</kbd> andar devagar · <kbd>Espaço</kbd> ou rodinha para baixo: pular · <kbd>Ctrl</kbd> parado: agachar; correndo: deslizar · <kbd>C</kbd> deitar / levantar · <kbd>Ctrl</kbd> + rodinha: zoom
-                        </p>
+                        <ListaTeclas />
                     </section>
                 </div>
 

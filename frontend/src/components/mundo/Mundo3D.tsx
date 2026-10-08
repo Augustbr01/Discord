@@ -1,10 +1,10 @@
 // Mundo 3D: o servidor aberto vira um andar do prédio, as salas de voz viram salas
 // de verdade. Entrar pela porta = entrar na call; sair dela = sair da call.
 // Carregado sob demanda (o three.js só baixa quando alguém abre o 3D).
-import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Settings, Tablet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode, type RefObject } from "react";
 import { VideoTrack, useConnectionState, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
+import { ChevronsDown, ChevronsUp, Keyboard, Loader2, LogOut, MonitorUp, MousePointerClick, Settings, Tablet, X } from "lucide-react";
 import type { Object3D } from "three";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
 import { useChatSala } from "../../contexto/ChatSala";
@@ -29,6 +29,7 @@ import type { ControleToque, PedidoJogador } from "./Jogador";
 import { dentro, gerarPlanta, nascerNaSala, type Interativo, type Ponto } from "./planta";
 import { ITEM, POSTURA, useJogadoresDoAndar, type Pose } from "./rede";
 import { AvisoSoftware, ContextoPerdido, Limite3D, SemWebGL, verificarWebGL } from "./SemWebGL";
+import { ListaTeclas } from "./Teclas";
 import { carregarFontes } from "./texturas";
 
 type Props = {
@@ -152,6 +153,13 @@ function Andar({
     const [salaAtual, setSalaAtual] = useState<string | null>(() => planta.salas.find((s) => dentro(s.ret, inicio))?.canalId ?? null);
     const [foco, setFoco] = useState<Interativo | null>(null);
     const [travado, setTravado] = useState(false);
+    // quando o mouse foi solto (Esc): a barra do "clique para jogar" mostra a espera do navegador
+    const [soltouEm, setSoltouEm] = useState<number | null>(null);
+    const travadoAntes = useRef(travado);
+    useEffect(() => {
+        if (travadoAntes.current && !travado) setSoltouEm(performance.now());
+        travadoAntes.current = travado;
+    }, [travado]);
     const [portaAberta, setPortaAberta] = useState(!noElevador);
     const portaFechada = useRef(!portaAberta);
     const [seletorAberto, setSeletorAberto] = useState(false);
@@ -626,13 +634,16 @@ function Andar({
                 </button>
 
                 {!travado && !toqueAtivo && !parado && !canalChat && !chatCallAberto && !controleAberto && (
-                    <div className="mundo-ajuda">
-                        <strong>Clique ou aperte W A S D para andar</strong>
-                        <span>
-                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>Ctrl</kbd> agachar / deslizar correndo · <kbd>C</kbd> deitar
-                            <br />
-                            <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>Ctrl</kbd> + rodinha zoom · <kbd>O</kbd> configurações · <kbd>Esc</kbd> soltar o mouse
-                        </span>
+                    // mouse solto: "clique pra jogar" um pouco acima do centro e, embaixo, o card das teclas
+                    <div className="mundo-pausa">
+                        <CardJogar soltouEm={soltouEm} />
+                        <div className="mundo-pausa-teclas">
+                            <header>
+                                <Keyboard size={15} />
+                                <strong>Teclas</strong>
+                            </header>
+                            <ListaTeclas />
+                        </div>
                     </div>
                 )}
 
@@ -771,6 +782,43 @@ function Andar({
                 <TelaCheia telas={midia.telasDaCall} membros={membros} eu={eu} onFechar={() => setTelaCheia(false)} />
             )}
         </>
+    );
+}
+
+// o Chrome só deixa travar o mouse de novo ~1 s depois do Esc
+const ESPERA_MOUSE_MS = 1100;
+
+// "Clique para jogar". Logo depois do Esc, uma barra esvazia enquanto o navegador não libera
+// o mouse (clicar nessa hora já vale: o jogo trava sozinho quando der, ver Jogador)
+function CardJogar({ soltouEm }: { soltouEm: number | null }) {
+    const [, atualizar] = useState(0);
+    const passou = soltouEm === null ? Infinity : performance.now() - soltouEm;
+    const esperando = passou < ESPERA_MOUSE_MS;
+    useEffect(() => {
+        if (!esperando) return;
+        const t = window.setTimeout(() => atualizar((n) => n + 1), ESPERA_MOUSE_MS - passou);
+        return () => window.clearTimeout(t);
+    }, [esperando, soltouEm]);
+
+    return (
+        <div className={`mundo-pausa-jogar ${esperando ? "esperando" : ""}`}>
+            <MousePointerClick size={22} />
+            <div>
+                <strong>{esperando ? "Só um instante…" : "Clique para jogar"}</strong>
+                <span>
+                    {esperando
+                        ? "O navegador já libera o mouse. Pode clicar que volta sozinho"
+                        : <>ou comece a andar com <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></>}
+                </span>
+            </div>
+            {esperando && (
+                <span
+                    key={soltouEm}
+                    className="mundo-pausa-barra"
+                    style={{ animationDuration: `${ESPERA_MOUSE_MS}ms`, animationDelay: `-${Math.round(passou)}ms` }}
+                />
+            )}
+        </div>
     );
 }
 
