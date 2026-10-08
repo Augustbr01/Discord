@@ -429,7 +429,9 @@ function Andar({
     // T: pega/guarda o tablet (o controle da sala da sua call)
     acoes.current.t = () => {
         if (controleAberto) {
+            // guardou o tablet: volta direto pro jogo (o T conta como ação pro navegador)
             setControleAberto(null);
+            pedido.current = { tipo: "travar" };
             return;
         }
         soltarMouse();
@@ -560,11 +562,11 @@ function Andar({
 
                 {!travado && !toqueAtivo && !parado && !canalChat && !chatCallAberto && !controleAberto && (
                     <div className="mundo-ajuda">
-                        <strong>Clique para andar</strong>
+                        <strong>Clique ou aperte W A S D para andar</strong>
                         <span>
-                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>C</kbd> agachar
+                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>Ctrl</kbd> agachar / deslizar correndo
                             <br />
-                            <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>O</kbd> configurações · <kbd>Esc</kbd> soltar o mouse
+                            <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>Ctrl</kbd> + rodinha zoom · <kbd>O</kbd> configurações · <kbd>Esc</kbd> soltar o mouse
                         </span>
                     </div>
                 )}

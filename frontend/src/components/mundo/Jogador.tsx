@@ -1,6 +1,7 @@
 // Você em primeira pessoa: mouse (com o ponteiro travado) ou toque pra olhar,
 // WASD/setas ou o joystick da tela pra andar. Esbarra nas paredes e nos móveis,
-// sobe os degraus do cinema, pula (Espaço ou rodinha), agacha (C), anda devagar (Shift) e senta.
+// sobe os degraus do cinema, pula (Espaço ou rodinha pra baixo), anda devagar (Shift) e senta.
+// Ctrl (um toque, como no CoD): parado agacha/levanta; correndo, desliza e volta a ficar em pé.
 //
 // A movimentação é a da Source/CS: aceleração e atrito no chão, controle no ar (air strafe)
 // e bunny hop — pular no tick em que encosta no chão não perde velocidade pro atrito.
@@ -20,7 +21,9 @@ import { POSTURA, type Pose } from "./rede";
 // 1 unidade do CS = 1 polegada
 const U = 0.0254;
 // altura dos olhos acima dos pés em cada postura (64 e 46 unidades no CS)
-const OLHOS = { [POSTURA.EM_PE]: 64 * U, [POSTURA.AGACHADO]: 46 * U, [POSTURA.DESLIZANDO]: 46 * U, [POSTURA.SENTADO]: 1.15 } as Record<number, number>;
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const OLHOS = { [POSTURA.EM_PE]: 64 * U, [POSTURA.AGACHADO]: 46 * U, [POSTURA.DESLIZANDO]: 38 * U, [POSTURA.SENTADO]: 1.15 } as Record<number, number>;
 
 const TICK = 1 / 64;
 const VELOCIDADE = 250 * U; // a de quem corre com a faca no CS
@@ -34,7 +37,17 @@ const MAXIMO_AR = 30 * U; // o quanto o ar deixa somar na direção que você ap
 const GRAVIDADE = 800 * U;
 const PULO = 301.993 * U;
 
+// deslize (Ctrl correndo): impulso, quanto perde por segundo, quanto dura, e o quanto dá pra curvar
+const DESLIZE_MINIMO = 0.75 * VELOCIDADE; // abaixo disso o Ctrl só agacha
+const DESLIZE_IMPULSO = 1.4 * VELOCIDADE;
+const DESLIZE_FREIO = 7; // m/s²
+const DESLIZE_DURACAO = 0.75;
+const DESLIZE_CURVA = 1.6; // rad/s
+const DESLIZE_ESPERA = 0.5; // entre um deslize e outro
+
 const SENSIBILIDADE_TOQUE = 0.005;
+// apertar uma destas com o mouse solto já volta pro jogo
+const TECLAS_DE_ANDAR = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 const LIMITE_OLHAR = Math.PI / 2 - 0.02;
 
 export type ControleToque = {
@@ -48,7 +61,8 @@ export type ControleToque = {
 };
 
 // pedidos de fora (o Mundo3D decide se o lugar está livre)
-export type PedidoJogador = { tipo: "sentar"; assento: Assento } | { tipo: "levantar" };
+// travar: volta o mouse pro jogo (fechou um painel com Esc)
+export type PedidoJogador = { tipo: "sentar"; assento: Assento } | { tipo: "levantar" } | { tipo: "travar" };
 
 type Props = {
     planta: Planta;
@@ -80,10 +94,26 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         olhos: OLHOS[POSTURA.EM_PE], cameraY: pose.current.y + OLHOS[POSTURA.EM_PE],
         assento: null as Assento | null,
         agachado: false,
+        // deslizando: o tempo que falta (0 = não); e a espera até poder deslizar de novo
+        deslize: 0,
+        esperaDeslize: 0,
     });
+    // agachado pelo Ctrl (liga/desliga com um toque; o deslize só termina agachado sem espaço pra levantar)
+    const agachadoLigado = useRef(false);
+    // Ctrl apertado: vale pro próximo quadro
+    const apertouCtrl = useRef(false);
+    // o que o último toque no Ctrl fez (Ctrl + rodinha é zoom: aí o agachar desse toque é desfeito)
+    const acaoCtrl = useRef<"agachar" | "deslizar" | "zoom" | null>(null);
+    // o botão de agachar da tela (toque) também conta como um toque no Ctrl
+    const agachadoToqueAntes = useRef(false);
+    // zoom com Ctrl + rodinha (1 = normal): o alvo muda na hora, a câmera chega nele suave
+    const zoomAlvo = useRef(1);
+    const zoom = useRef(1);
     const sala = useRef<string | null>(null);
     const foco = useRef<string | null>(null);
     const postura = useRef<number>(POSTURA.EM_PE);
+    // trava o mouse no jogo (definida no efeito, que tem o canvas)
+    const travarMouse = useRef<() => void>(() => {});
     const paradoRef = useRef(parado);
     paradoRef.current = parado;
 
@@ -111,28 +141,62 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             }
         };
 
+        travarMouse.current = () => {
+            if (!travado()) travar();
+        };
+
         const aoClicar = (e: MouseEvent) => {
             // no toque não tem ponteiro pra travar: lá quem olha é o arrastar
             const tipo = (e as PointerEvent).pointerType;
             if ((tipo && tipo !== "mouse") || !("requestPointerLock" in canvas)) return;
             if (!paradoRef.current && !travado()) travar();
         };
-        // rodinha pula (como o "bind mwheeldown +jump" do CS)
         const aoRodar = (e: WheelEvent) => {
-            if (!travado() || paradoRef.current || e.deltaY === 0) return;
+            // Ctrl + rodinha: zoom (pra cima aproxima, pra baixo volta ao normal). Só dentro do 3D:
+            // em cima de um painel (chat, controle) fica o zoom da página do navegador
+            if (e.ctrlKey) {
+                if (!travado() && !(e.target instanceof Node && area.contains(e.target))) return;
+                e.preventDefault();
+                // o Ctrl desse giro era pro zoom, não pra agachar: desfaz
+                if (acaoCtrl.current === "agachar") agachadoLigado.current = !agachadoLigado.current;
+                acaoCtrl.current = "zoom";
+                // linhas (Firefox) viram pixels; um "clique" da rodinha (~100 px) dá ~1,3×,
+                // e o pinça do touchpad (deltas pequenos) vai suave
+                const px = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+                zoomAlvo.current = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomAlvo.current * Math.exp(-px * 0.0025)));
+                if (zoomAlvo.current < 1.02) zoomAlvo.current = 1;
+                return;
+            }
+            // rodinha pra baixo pula ("bind mwheeldown +jump"); pra cima não faz nada
+            if (!travado() || paradoRef.current || e.deltaY <= 0) return;
             querPular.current = true;
         };
         const aoMudarTrava = () => onTravado(travado());
         const aoMexer = (e: MouseEvent) => {
             if (!travado() || paradoRef.current) return;
             const cfg = lerConfig();
-            const rad = radianosPorPonto(cfg.sensibilidade);
+            // com zoom, o mouse anda menos (como mira de luneta): o mesmo gesto cobre o mesmo pedaço da tela
+            const rad = radianosPorPonto(cfg.sensibilidade) / zoom.current;
             olhar.current.yaw -= e.movementX * rad;
             const y = cfg.inverterY ? -e.movementY : e.movementY;
             olhar.current.pitch = Math.max(-LIMITE_OLHAR, Math.min(LIMITE_OLHAR, olhar.current.pitch - y * rad));
         };
         const aoApertar = (e: KeyboardEvent) => {
-            if (estaDigitando(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (estaDigitando(e) || e.metaKey || e.altKey) return;
+            if (e.code === "ControlLeft" || e.code === "ControlRight") {
+                // um toque por aperto (segurar não repete); só jogando (com o mouse travado)
+                if (!e.repeat && travado()) apertouCtrl.current = true;
+                return;
+            }
+            // jogando, os atalhos do navegador com Ctrl (Ctrl+D, Ctrl+S...) não disparam.
+            // Ctrl+W, Ctrl+T e Ctrl+N o navegador não deixa bloquear (ver aoSair)
+            if (e.ctrlKey) {
+                if (!travado()) return;
+                e.preventDefault();
+            }
+            // mouse solto (fechou um painel com Esc, por exemplo): começar a andar já volta pro jogo.
+            // O navegador só deixa travar o mouse depois de uma tecla ou clique — e o Esc não conta
+            if (TECLAS_DE_ANDAR.has(e.code) && !travado() && !paradoRef.current) travar();
             teclas.current.add(e.code);
             if (e.code === "Space") {
                 // sem isso o Espaço rola a página ou clica no botão que estiver com foco
@@ -140,17 +204,30 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 if (!e.repeat) querPular.current = true;
             }
         };
-        const aoSoltar = (e: KeyboardEvent) => teclas.current.delete(e.code);
+        const aoSoltar = (e: KeyboardEvent) => {
+            teclas.current.delete(e.code);
+            if (e.code === "ControlLeft" || e.code === "ControlRight") acaoCtrl.current = null;
+        };
+        // Ctrl+W fecha a aba e nenhum site consegue bloquear. Jogando (mouse travado), pelo menos
+        // o navegador pergunta "Sair do site?" antes, em vez de fechar direto
+        const aoSair = (e: BeforeUnloadEvent) => {
+            if (!travado()) return;
+            e.preventDefault();
+            e.returnValue = "";
+        };
         const aoSairDaJanela = () => teclas.current.clear();
 
         area.addEventListener("click", aoClicar);
-        document.addEventListener("wheel", aoRodar, { passive: true });
+        // não passivo: o Ctrl + rodinha precisa do preventDefault pra não dar zoom na página
+        document.addEventListener("wheel", aoRodar, { passive: false });
         document.addEventListener("pointerlockchange", aoMudarTrava);
         document.addEventListener("mousemove", aoMexer);
         window.addEventListener("keydown", aoApertar);
         window.addEventListener("keyup", aoSoltar);
         window.addEventListener("blur", aoSairDaJanela);
+        window.addEventListener("beforeunload", aoSair);
         return () => {
+            window.removeEventListener("beforeunload", aoSair);
             area.removeEventListener("click", aoClicar);
             document.removeEventListener("wheel", aoRodar);
             document.removeEventListener("pointerlockchange", aoMudarTrava);
@@ -228,10 +305,74 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         f.vz += soma * dirZ;
     }
 
-    function tick(dt: number, frente: number, lado: number, agachar: boolean, devagar: boolean, pular: boolean) {
+    // cabe em pé aqui (pra levantar do agachado)? Embaixo da prateleira, não
+    function cabeEmPe(p: Ponto & { y: number }) {
+        return pontoLivre(solidos(), p, p.y, p.y + ALTURA_CORPO);
+    }
+
+    // um toque no Ctrl (ou no botão de agachar da tela)
+    function apertarAgachar() {
+        const f = fisica.current;
+        if (f.deslize > 0) return;
+        const vel = Math.hypot(f.vx, f.vz);
+        // correndo: desliza (com um impulso pra frente, como no CoD)
+        if (f.noChao && !agachadoLigado.current && vel >= DESLIZE_MINIMO && f.esperaDeslize <= 0) {
+            const k = Math.max(vel, DESLIZE_IMPULSO) / vel;
+            f.vx *= k;
+            f.vz *= k;
+            f.deslize = DESLIZE_DURACAO;
+            acaoCtrl.current = "deslizar";
+            return;
+        }
+        // parado ou devagar: agacha / levanta (se tiver espaço pra ficar em pé)
+        if (agachadoLigado.current) {
+            if (!cabeEmPe(pose.current)) return;
+            agachadoLigado.current = false;
+        } else {
+            agachadoLigado.current = true;
+        }
+        acaoCtrl.current = "agachar";
+    }
+
+    // um tick deslizando: perde velocidade aos poucos, curva só um pouco, e termina em pé
+    // (agachado só se acabar num lugar onde não dá pra levantar, como embaixo da prateleira)
+    function deslizar(dt: number, dirX: number, dirZ: number) {
+        const f = fisica.current;
+        const vel = Math.hypot(f.vx, f.vz);
+        const nova = Math.max(0, vel - DESLIZE_FREIO * dt);
+        let angulo = Math.atan2(f.vz, f.vx);
+        if (dirX || dirZ) {
+            let diferenca = Math.atan2(dirZ, dirX) - angulo;
+            diferenca = Math.atan2(Math.sin(diferenca), Math.cos(diferenca));
+            // só curva pra onde aponta mais ou menos pra frente (pra trás não freia nem vira)
+            if (Math.abs(diferenca) < Math.PI / 2) angulo += Math.max(-DESLIZE_CURVA * dt, Math.min(DESLIZE_CURVA * dt, diferenca));
+        }
+        f.vx = Math.cos(angulo) * nova;
+        f.vz = Math.sin(angulo) * nova;
+        f.deslize -= dt;
+        if (f.deslize <= 0 || nova < VELOCIDADE * FATOR_AGACHADO) {
+            f.deslize = 0;
+            f.esperaDeslize = DESLIZE_ESPERA;
+            agachadoLigado.current = !cabeEmPe(pose.current);
+        }
+    }
+
+    function tick(dt: number, frente: number, lado: number, devagar: boolean, pular: boolean) {
         const f = fisica.current;
         const p = pose.current;
         f.antes = { x: p.x, y: p.y, z: p.z };
+        f.esperaDeslize = Math.max(0, f.esperaDeslize - dt);
+        // pulou: levanta. Do deslize é o "slide cancel": sai pulando e mantém o embalo
+        if (pular && f.noChao) {
+            if (f.deslize > 0) {
+                f.deslize = 0;
+                f.esperaDeslize = DESLIZE_ESPERA;
+            }
+            if (agachadoLigado.current && cabeEmPe(p)) agachadoLigado.current = false;
+        }
+        const deslizando = f.deslize > 0;
+        // deslizando, o corpo fica baixo como agachado (passa por baixo do que o agachado passa)
+        const agachar = deslizando || agachadoLigado.current;
         f.agachado = agachar;
 
         // direção que você quer ir, no andar: frente = (-sen yaw, -cos yaw); direita = (cos yaw, -sen yaw)
@@ -253,11 +394,12 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 // pulou: sai do chão antes do atrito (bhop no tick certo não perde nada)
                 f.vy = PULO;
                 f.noChao = false;
-            } else {
+            } else if (!deslizando) {
                 atrito(dt);
             }
         }
-        if (f.noChao) acelerar(dirX, dirZ, desejada, ACELERACAO, Infinity, dt);
+        if (deslizando && f.noChao) deslizar(dt, dirX, dirZ);
+        else if (f.noChao) acelerar(dirX, dirZ, desejada, ACELERACAO, Infinity, dt);
         else acelerar(dirX, dirZ, desejada, ACELERACAO_AR, MAXIMO_AR, dt);
 
         // andar com colisão: o que fica acima do degrau que dá pra subir (e abaixo da cabeça) é parede
@@ -297,6 +439,11 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 f.noChao = true;
             }
         }
+        // deslizou pra fora de uma beirada: cai com o embalo, já sem deslizar
+        if (!f.noChao && f.deslize > 0) {
+            f.deslize = 0;
+            f.esperaDeslize = DESLIZE_ESPERA;
+        }
     }
 
     useFrame((_, delta) => {
@@ -308,9 +455,11 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const toq = toque.current;
         const cfg = lerConfig();
 
-        // campo de visão das configurações
+        // campo de visão das configurações, estreitado pelo zoom
         const cam = camera as THREE.PerspectiveCamera;
-        const fov = fovVertical(cfg.fov);
+        zoom.current += (zoomAlvo.current - zoom.current) * (1 - Math.exp(-14 * dt));
+        if (Math.abs(zoom.current - zoomAlvo.current) < 0.002) zoom.current = zoomAlvo.current;
+        const fov = (2 * Math.atan(Math.tan((fovVertical(cfg.fov) * Math.PI) / 360) / zoom.current) * 180) / Math.PI;
         if (Math.abs(cam.fov - fov) > 0.01) {
             cam.fov = fov;
             cam.updateProjectionMatrix();
@@ -339,13 +488,24 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             lado += toq.andar.x;
         }
         const intensidade = Math.min(1, Math.hypot(frente, lado));
-        const agachar = (t.has("KeyC") || toq.agachado) && !paradoRef.current;
+        // Ctrl (ou o botão de agachar da tela): agacha/levanta, ou desliza se estiver correndo
+        const tocouAgachar = toq.agachado !== agachadoToqueAntes.current;
+        agachadoToqueAntes.current = toq.agachado;
+        if ((apertouCtrl.current || tocouAgachar) && !paradoRef.current && !f.assento) apertarAgachar();
+        apertouCtrl.current = false;
         const devagar = t.has("ShiftLeft") || t.has("ShiftRight");
         const segurandoPulo = t.has("Space") && !paradoRef.current;
 
         // ---------- sentar / levantar ----------
         const pedidoAgora = pedido.current;
         pedido.current = null;
+        // fechou o painel por uma tecla (T): volta pro jogo. Vale porque a tecla acabou de ser
+        // apertada (o navegador só deixa travar o mouse logo depois de uma tecla ou clique)
+        if (pedidoAgora?.tipo === "travar") {
+            // o painel fechou neste mesmo instante e o React ainda não redesenhou: tenta no próximo quadro
+            if (paradoRef.current) pedido.current = pedidoAgora;
+            else travarMouse.current();
+        }
         if (pedidoAgora?.tipo === "sentar" && !f.assento) {
             const a = pedidoAgora.assento;
             f.assento = a;
@@ -371,10 +531,10 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             while (f.acumulado >= TICK) {
                 const pular = !paradoRef.current && (querPular.current || (cfg.autoBhop && segurandoPulo));
                 querPular.current = false;
-                tick(TICK, frente, lado, agachar, devagar, pular && f.noChao);
+                tick(TICK, frente, lado, devagar, pular && f.noChao);
                 f.acumulado -= TICK;
             }
-            novaPostura = agachar ? POSTURA.AGACHADO : POSTURA.EM_PE;
+            novaPostura = f.deslize > 0 ? POSTURA.DESLIZANDO : agachadoLigado.current ? POSTURA.AGACHADO : POSTURA.EM_PE;
         }
         velocidade.current = f.assento ? 0 : Math.hypot(f.vx, f.vz);
 
