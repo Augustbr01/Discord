@@ -1,4 +1,4 @@
-// Configurações do 3D: mouse (igual ao CS2), campo de visão, pulo e velocímetro.
+// Configurações do 3D: mouse, campo de visão, movimento e velocímetro.
 import { useEffect, useRef, type RefObject } from "react";
 import { RotateCcw, X } from "lucide-react";
 import { CONFIG_PADRAO, LIMITES, mudarConfig, useConfigMundo } from "./config";
@@ -22,7 +22,7 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                         <label className="mundo-config-linha">
                             <span>
                                 Sensibilidade
-                                <small>Mesma escala do CS2: dá pra usar a sua de lá.</small>
+                                <small>Velocidade com que a câmera gira ao mover o mouse.</small>
                             </span>
                             <input
                                 type="number"
@@ -48,7 +48,7 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                         />
                         <Alternar
                             titulo="Entrada bruta"
-                            detalhe="Ignora a aceleração do mouse do sistema (como o raw input). Vale ao travar o mouse de novo."
+                            detalhe="Ignora a aceleração do mouse configurada no sistema operacional. Passa a valer na próxima vez que o mouse for capturado."
                             ligado={cfg.entradaBruta}
                             onMudar={(v) => mudarConfig({ entradaBruta: v })}
                         />
@@ -60,7 +60,7 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                         <label className="mundo-config-linha">
                             <span>
                                 Campo de visão
-                                <small>90 é o do CS.</small>
+                                <small>Ângulo de visão horizontal, em graus. Padrão: 90.</small>
                             </span>
                             <strong className="mundo-config-valor">{cfg.fov}</strong>
                         </label>
@@ -79,12 +79,12 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                     <section>
                         <h3>Movimento</h3>
                         <Alternar
-                            titulo="Bhop automático"
-                            detalhe="Segurando Espaço, pula de novo assim que encosta no chão. Desligado, tem que acertar o tempo (a rodinha do mouse ajuda)."
+                            titulo="Pulo contínuo"
+                            detalhe="Com Espaço pressionado, o personagem pula novamente assim que toca o chão."
                             ligado={cfg.autoBhop}
                             onMudar={(v) => mudarConfig({ autoBhop: v })}
                         />
-                        <Alternar titulo="Mostrar velocidade" detalhe="Em unidades do CS (250 = correndo)." ligado={cfg.mostrarVelocidade} onMudar={(v) => mudarConfig({ mostrarVelocidade: v })} />
+                        <Alternar titulo="Mostrar velocidade" detalhe="Exibe a velocidade de deslocamento, em km/h." ligado={cfg.mostrarVelocidade} onMudar={(v) => mudarConfig({ mostrarVelocidade: v })} />
                         <Alternar titulo="Mostrar hitboxes" detalhe="Exibe o contorno das áreas de colisão de paredes e móveis." ligado={cfg.mostrarHitbox} onMudar={(v) => mudarConfig({ mostrarHitbox: v })} />
                     </section>
 
@@ -121,13 +121,13 @@ function Alternar({ titulo, detalhe, ligado, onMudar }: AlternarProps) {
     );
 }
 
-// velocidade no chão em unidades do CS, atualizada a cada quadro sem re-renderizar
+// velocidade no chão em km/h, atualizada a cada quadro sem re-renderizar
 export function Velocimetro({ velocidade }: { velocidade: RefObject<number> }) {
     const ref = useRef<HTMLSpanElement>(null);
     useEffect(() => {
         let quadro = 0;
         const atualizar = () => {
-            if (ref.current) ref.current.textContent = String(Math.round(velocidade.current / 0.0254));
+            if (ref.current) ref.current.textContent = `${Math.round(velocidade.current * 3.6)} km/h`;
             quadro = requestAnimationFrame(atualizar);
         };
         atualizar();
