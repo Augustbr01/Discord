@@ -17,7 +17,7 @@ type Mensagem = {
 }
 
 // onde alguém está no mundo 3D: x/z no chão, y = altura dos pés (pulo, degraus do cinema),
-// rot = para onde está virado (radianos), postura = 0 em pé, 1 agachado, 2 deslizando, 3 sentado,
+// rot = para onde está virado (radianos), postura = 0 em pé, 1 agachado, 2 deslizando, 3 sentado, 4 deitado,
 // item = o que está segurando (0 nada, 1 tablet), pitch = olhando pra cima (+) ou pra baixo (-), em radianos
 export type PoseJogador = { usuarioId: string; x: number; z: number; y: number; rot: number; pitch: number; postura: number; item: number }
 

@@ -2,6 +2,7 @@
 // WASD/setas ou o joystick da tela pra andar. Esbarra nas paredes e nos móveis,
 // sobe os degraus do cinema, pula (Espaço ou rodinha pra baixo), anda devagar (Shift) e senta.
 // Ctrl (um toque, como no CoD): parado agacha/levanta; correndo, desliza e volta a ficar em pé.
+// C deita no chão (rasteja devagar) e levanta; deslizando, termina o deslize deitado.
 //
 // A movimentação é a da Source/CS: aceleração e atrito no chão, controle no ar (air strafe)
 // e bunny hop — pular no tick em que encosta no chão não perde velocidade pro atrito.
@@ -11,7 +12,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as THREE from "three";
 import { estaDigitando } from "../../lib/util";
 import { fovVertical, lerConfig, radianosPorPonto } from "./config";
-import { ALTURA_AGACHADO, ALTURA_CORPO, alturaChao, mover, pontoLivre, solidoDeRet, DEGRAU_MAXIMO } from "./colisao";
+import { ALTURA_AGACHADO, ALTURA_CORPO, ALTURA_DEITADO, alturaChao, mover, pontoLivre, solidoDeRet, DEGRAU_MAXIMO } from "./colisao";
 import {
     dentro, ALTURA, ALTURA_ELEVADOR, ALTURA_HALL,
     type Assento, type Interativo, type Planta, type Ponto,
@@ -23,12 +24,13 @@ const U = 0.0254;
 // altura dos olhos acima dos pés em cada postura (64 e 46 unidades no CS)
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 4;
-const OLHOS = { [POSTURA.EM_PE]: 64 * U, [POSTURA.AGACHADO]: 46 * U, [POSTURA.DESLIZANDO]: 38 * U, [POSTURA.SENTADO]: 1.15 } as Record<number, number>;
+const OLHOS = { [POSTURA.EM_PE]: 64 * U, [POSTURA.AGACHADO]: 46 * U, [POSTURA.DESLIZANDO]: 38 * U, [POSTURA.SENTADO]: 1.15, [POSTURA.DEITADO]: 0.3 } as Record<number, number>;
 
 const TICK = 1 / 64;
 const VELOCIDADE = 250 * U; // a de quem corre com a faca no CS
 const FATOR_DEVAGAR = 0.52; // Shift
 const FATOR_AGACHADO = 0.34;
+const FATOR_DEITADO = 0.35; // rastejando (~1,3 m/s)
 const ACELERACAO = 5.5; // sv_accelerate
 const ATRITO = 5.2; // sv_friction
 const PARADA = 80 * U; // sv_stopspeed
@@ -97,11 +99,16 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         // deslizando: o tempo que falta (0 = não); e a espera até poder deslizar de novo
         deslize: 0,
         esperaDeslize: 0,
+        // rastejando: a câmera balança junto com as puxadas dos braços
+        faseRasteja: 0, balancoRasteja: 0,
     });
     // agachado pelo Ctrl (liga/desliga com um toque; o deslize só termina agachado sem espaço pra levantar)
     const agachadoLigado = useRef(false);
-    // Ctrl apertado: vale pro próximo quadro
+    // deitado pelo C (liga/desliga; só levanta se tiver espaço)
+    const deitadoLigado = useRef(false);
+    // Ctrl / C apertado: vale pro próximo quadro
     const apertouCtrl = useRef(false);
+    const apertouC = useRef(false);
     // o que o último toque no Ctrl fez (Ctrl + rodinha é zoom: aí o agachar desse toque é desfeito)
     const acaoCtrl = useRef<"agachar" | "deslizar" | "zoom" | null>(null);
     // o botão de agachar da tela (toque) também conta como um toque no Ctrl
@@ -186,6 +193,10 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             if (e.code === "ControlLeft" || e.code === "ControlRight") {
                 // um toque por aperto (segurar não repete); só jogando (com o mouse travado)
                 if (!e.repeat && travado()) apertouCtrl.current = true;
+                return;
+            }
+            if (e.code === "KeyC" && !e.ctrlKey) {
+                if (!e.repeat && travado()) apertouC.current = true;
                 return;
             }
             // jogando, os atalhos do navegador com Ctrl (Ctrl+D, Ctrl+S...) não disparam.
@@ -309,11 +320,47 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
     function cabeEmPe(p: Ponto & { y: number }) {
         return pontoLivre(solidos(), p, p.y, p.y + ALTURA_CORPO);
     }
+    function cabeAgachado(p: Ponto & { y: number }) {
+        return pontoLivre(solidos(), p, p.y, p.y + ALTURA_AGACHADO);
+    }
+
+    // sai do deitado: fica em pé, ou agachado se só couber agachado (embaixo da prateleira)
+    function levantarDoChao() {
+        const p = pose.current;
+        if (cabeEmPe(p)) agachadoLigado.current = false;
+        else if (cabeAgachado(p)) agachadoLigado.current = true;
+        else return;
+        deitadoLigado.current = false;
+    }
+
+    // um toque no C: deita / levanta. Deslizando, termina o deslize no chão (como no CoD)
+    function apertarDeitar() {
+        const f = fisica.current;
+        if (!f.noChao) return;
+        if (deitadoLigado.current) {
+            levantarDoChao();
+            return;
+        }
+        if (f.deslize > 0) {
+            f.deslize = 0;
+            f.esperaDeslize = DESLIZE_ESPERA;
+        }
+        deitadoLigado.current = true;
+        agachadoLigado.current = false;
+    }
 
     // um toque no Ctrl (ou no botão de agachar da tela)
     function apertarAgachar() {
         const f = fisica.current;
         if (f.deslize > 0) return;
+        // deitado: o Ctrl sobe pro agachado (se couber)
+        if (deitadoLigado.current) {
+            if (!cabeAgachado(pose.current)) return;
+            deitadoLigado.current = false;
+            agachadoLigado.current = true;
+            acaoCtrl.current = "agachar";
+            return;
+        }
         const vel = Math.hypot(f.vx, f.vz);
         // correndo: desliza (com um impulso pra frente, como no CoD)
         if (f.noChao && !agachadoLigado.current && vel >= DESLIZE_MINIMO && f.esperaDeslize <= 0) {
@@ -362,6 +409,11 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const p = pose.current;
         f.antes = { x: p.x, y: p.y, z: p.z };
         f.esperaDeslize = Math.max(0, f.esperaDeslize - dt);
+        // deitado, o pulo só levanta (não sai do chão)
+        if (pular && f.noChao && deitadoLigado.current) {
+            levantarDoChao();
+            pular = false;
+        }
         // pulou: levanta. Do deslize é o "slide cancel": sai pulando e mantém o embalo
         if (pular && f.noChao) {
             if (f.deslize > 0) {
@@ -371,9 +423,11 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             if (agachadoLigado.current && cabeEmPe(p)) agachadoLigado.current = false;
         }
         const deslizando = f.deslize > 0;
+        const deitado = deitadoLigado.current;
         // deslizando, o corpo fica baixo como agachado (passa por baixo do que o agachado passa)
-        const agachar = deslizando || agachadoLigado.current;
+        const agachar = !deitado && (deslizando || agachadoLigado.current);
         f.agachado = agachar;
+        const alturaCorpo = deitado ? ALTURA_DEITADO : agachar ? ALTURA_AGACHADO : ALTURA_CORPO;
 
         // direção que você quer ir, no andar: frente = (-sen yaw, -cos yaw); direita = (cos yaw, -sen yaw)
         const yaw = olhar.current.yaw;
@@ -387,7 +441,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             dirX = -Math.sin(yaw) * fr + Math.cos(yaw) * la;
             dirZ = -Math.cos(yaw) * fr - Math.sin(yaw) * la;
         }
-        const desejada = VELOCIDADE * (agachar ? FATOR_AGACHADO : devagar ? FATOR_DEVAGAR : 1) * intensidade;
+        const desejada = VELOCIDADE * (deitado ? FATOR_DEITADO : agachar ? FATOR_AGACHADO : devagar ? FATOR_DEVAGAR : 1) * intensidade;
 
         if (f.noChao) {
             if (pular) {
@@ -404,7 +458,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
 
         // andar com colisão: o que fica acima do degrau que dá pra subir (e abaixo da cabeça) é parede
         const lista = solidos();
-        const novo = mover(p, { x: p.x + f.vx * dt, z: p.z + f.vz * dt }, lista, p.y, p.y + (agachar ? ALTURA_AGACHADO : ALTURA_CORPO));
+        const novo = mover(p, { x: p.x + f.vx * dt, z: p.z + f.vz * dt }, lista, p.y, p.y + alturaCorpo);
         // bateu: a velocidade fica só no que deu pra andar (desliza na parede, não acumula)
         const realX = (novo.x - p.x) / dt;
         const realZ = (novo.z - p.z) / dt;
@@ -428,7 +482,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             f.vy -= GRAVIDADE * dt;
             p.y += f.vy * dt;
             // o limite é a câmera não passar do teto (pela cabeça, o pulo do CS bateria nos 3,2 m do corredor)
-            const limite = teto(p) - 0.1 - OLHOS[agachar ? POSTURA.AGACHADO : POSTURA.EM_PE];
+            const limite = teto(p) - 0.1 - OLHOS[deitado ? POSTURA.DEITADO : agachar ? POSTURA.AGACHADO : POSTURA.EM_PE];
             if (p.y > limite && f.vy > 0) {
                 p.y = limite;
                 f.vy = 0;
@@ -492,7 +546,9 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const tocouAgachar = toq.agachado !== agachadoToqueAntes.current;
         agachadoToqueAntes.current = toq.agachado;
         if ((apertouCtrl.current || tocouAgachar) && !paradoRef.current && !f.assento) apertarAgachar();
+        if (apertouC.current && !paradoRef.current && !f.assento) apertarDeitar();
         apertouCtrl.current = false;
+        apertouC.current = false;
         const devagar = t.has("ShiftLeft") || t.has("ShiftRight");
         const segurandoPulo = t.has("Space") && !paradoRef.current;
 
@@ -509,6 +565,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         if (pedidoAgora?.tipo === "sentar" && !f.assento) {
             const a = pedidoAgora.assento;
             f.assento = a;
+            deitadoLigado.current = false;
             p.x = a.x;
             p.z = a.z;
             p.y = a.y;
@@ -534,7 +591,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 tick(TICK, frente, lado, devagar, pular && f.noChao);
                 f.acumulado -= TICK;
             }
-            novaPostura = f.deslize > 0 ? POSTURA.DESLIZANDO : agachadoLigado.current ? POSTURA.AGACHADO : POSTURA.EM_PE;
+            novaPostura = deitadoLigado.current ? POSTURA.DEITADO : f.deslize > 0 ? POSTURA.DESLIZANDO : agachadoLigado.current ? POSTURA.AGACHADO : POSTURA.EM_PE;
         }
         velocidade.current = f.assento ? 0 : Math.hypot(f.vx, f.vz);
 
@@ -547,8 +604,12 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const alvoY = y + f.olhos;
         // no chão suaviza (degrau não dá tranco); no ar segue direto
         f.cameraY = f.noChao ? f.cameraY + (alvoY - f.cameraY) * Math.min(1, dt * 18) : alvoY;
-        camera.position.set(x, f.cameraY, z);
-        camera.rotation.set(olhar.current.pitch, olhar.current.yaw, 0, "YXZ");
+        const rastejando = novaPostura === POSTURA.DEITADO ? Math.min(1, velocidade.current / 0.8) : 0;
+        f.balancoRasteja += (rastejando - f.balancoRasteja) * Math.min(1, dt * 8);
+        f.faseRasteja += velocidade.current * dt * 5;
+        const puxa = Math.sin(f.faseRasteja) * f.balancoRasteja;
+        camera.position.set(x, f.cameraY + Math.abs(puxa) * 0.025, z);
+        camera.rotation.set(olhar.current.pitch, olhar.current.yaw, puxa * 0.025, "YXZ");
 
         p.rot = olhar.current.yaw;
         p.pitch = olhar.current.pitch;

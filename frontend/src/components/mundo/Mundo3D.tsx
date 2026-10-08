@@ -564,7 +564,7 @@ function Andar({
                     <div className="mundo-ajuda">
                         <strong>Clique ou aperte W A S D para andar</strong>
                         <span>
-                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>Ctrl</kbd> agachar / deslizar correndo
+                            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> andar · <kbd>Shift</kbd> devagar · <kbd>Espaço</kbd> pular · <kbd>Ctrl</kbd> agachar / deslizar correndo · <kbd>C</kbd> deitar
                             <br />
                             <kbd>E</kbd> interagir e sentar · <kbd>T</kbd> tablet · <kbd>Ctrl</kbd> + rodinha zoom · <kbd>O</kbd> configurações · <kbd>Esc</kbd> soltar o mouse
                         </span>

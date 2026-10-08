@@ -1,6 +1,6 @@
 // Um boneco por pessoa: anda até a última posição que chegou pela rede (suavizado),
 // mostra o nome, a foto (ou a câmera, se estiver ligada) no rosto e as telas
-// compartilhadas flutuando em cima da cabeça. Pula, agacha, desliza e senta
+// compartilhadas flutuando em cima da cabeça. Pula, agacha, desliza, senta e deita
 // (quadril e joelho de cada perna mudam de ângulo conforme a postura).
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
@@ -46,15 +46,22 @@ function telaDoTablet() {
 }
 const QUADRIL = 0.72; // altura do quadril em pé
 const SEGMENTO = 0.36; // coxa e canela
+// deitado: o corpo tomba pra frente a partir dos pés; ele recua isso pra cabeça ficar perto
+// de onde a pessoa está (os olhos da câmera dela) e sobe o tanto da grossura do tronco
+const RECUO_DEITADO = 1.1;
+const ALTURA_DEITADO = 0.21;
 
 // como o corpo fica em cada postura. queda = quanto o quadril desce; inclinação = tronco
-// pra trás (+) ou pra frente (-); quadril/joelho = ângulo das pernas; braço = pra frente (+)
-type Forma = { queda: number; inclinacao: number; quadril: number; joelho: number; braco: number };
+// pra trás (+) ou pra frente (-); quadril/joelho = ângulo das pernas; braço = pra frente (+);
+// deitar = 0 de pé, 1 de bruços no chão
+type Forma = { queda: number; inclinacao: number; quadril: number; joelho: number; braco: number; deitar: number };
 const FORMAS: Record<number, Forma> = {
-    [POSTURA.EM_PE]: { queda: 0, inclinacao: 0, quadril: 0, joelho: 0, braco: 0 },
-    [POSTURA.AGACHADO]: { queda: 0.3, inclinacao: -0.25, quadril: 1.05, joelho: -1.9, braco: 0.5 },
-    [POSTURA.DESLIZANDO]: { queda: 0.42, inclinacao: 0.55, quadril: 1.35, joelho: -0.35, braco: -0.6 },
-    [POSTURA.SENTADO]: { queda: 0.17, inclinacao: 0.12, quadril: Math.PI / 2, joelho: -Math.PI / 2, braco: 0.35 },
+    [POSTURA.EM_PE]: { queda: 0, inclinacao: 0, quadril: 0, joelho: 0, braco: 0, deitar: 0 },
+    [POSTURA.AGACHADO]: { queda: 0.3, inclinacao: -0.25, quadril: 1.05, joelho: -1.9, braco: 0.5, deitar: 0 },
+    [POSTURA.DESLIZANDO]: { queda: 0.42, inclinacao: 0.55, quadril: 1.35, joelho: -0.35, braco: -0.6, deitar: 0 },
+    [POSTURA.SENTADO]: { queda: 0.17, inclinacao: 0.12, quadril: Math.PI / 2, joelho: -Math.PI / 2, braco: 0.35, deitar: 0 },
+    // de bruços, braços esticados pra frente (como quem rasteja)
+    [POSTURA.DEITADO]: { queda: 0, inclinacao: 0, quadril: 0, joelho: -0.15, braco: 2.7, deitar: 1 },
 };
 
 // diferença entre dois ângulos pelo caminho mais curto
@@ -141,7 +148,9 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
 
         const v = Math.hypot(e.x - antesX, e.z - antesZ) / Math.max(delta, 1e-3);
         e.velocidade += (v - e.velocidade) * Math.min(1, delta * 8);
-        e.fase += e.velocidade * delta * 2.6;
+        const deitado = alvo.postura === POSTURA.DEITADO;
+        // rastejando, os "passos" são curtos: a fase anda mais rápido por metro
+        e.fase += e.velocidade * delta * (deitado ? 5 : 2.6);
         // só balança as pernas andando em pé ou agachado
         const anda = alvo.postura === POSTURA.EM_PE || alvo.postura === POSTURA.AGACHADO;
         const passo = anda ? Math.min(1, e.velocidade / 3) : 0;
@@ -176,33 +185,46 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
             }
         }
         e.sentadoAntes = sentado;
-        corpo.current.rotation.y = e.corpo;
+        // deitado: tomba pra frente (o giro em x é no corpo já virado pra onde olha)
+        corpo.current.rotation.set(-forma.deitar * Math.PI / 2, e.corpo, 0, "YXZ");
         if (grupoCabeca.current) {
             const lado = Math.max(-limite, Math.min(limite, giro(e.rot, e.corpo)));
             const cima = Math.max(-INCLINACAO_CABECA, Math.min(INCLINACAO_CABECA, e.pitch));
             // a maior parte do olhar pra cima/baixo é a cabeça; o resto o tronco acompanha
-            grupoCabeca.current.rotation.set(cima * 0.75, lado, 0, "YXZ");
+            // deitado, a cabeça levanta pra olhar pra frente em vez de pro chão
+            grupoCabeca.current.rotation.set(cima * 0.75 + forma.deitar * 1.2, lado, 0, "YXZ");
         }
-        corpo.current.position.y = -forma.queda + Math.abs(Math.sin(e.fase)) * 0.045 * passo;
+        corpo.current.position.set(
+            Math.sin(e.corpo) * RECUO_DEITADO * forma.deitar,
+            -forma.queda + Math.abs(Math.sin(e.fase)) * 0.045 * passo + ALTURA_DEITADO * forma.deitar,
+            Math.cos(e.corpo) * RECUO_DEITADO * forma.deitar,
+        );
         if (tronco.current) tronco.current.rotation.x = forma.inclinacao + Math.max(-0.3, Math.min(0.3, e.pitch * 0.25));
 
         // pernas e braços balançam em oposição; o joelho dobra na perna que vai pra trás
         const balanco = Math.sin(e.fase) * (alvo.postura === POSTURA.AGACHADO ? 0.35 : 0.6) * passo;
+        // rastejando: um braço estica e puxa enquanto o joelho do outro lado sobe pro lado
+        const puxa = deitado ? Math.sin(e.fase) * Math.min(1, e.velocidade / 0.8) * forma.deitar : 0;
+        const joelhoSobeE = Math.max(0, -puxa);
+        const joelhoSobeD = Math.max(0, puxa);
         const [quadrilE, quadrilD, joelhoE, joelhoD, bracoE, bracoD] = juntas.current;
-        if (quadrilE) quadrilE.rotation.x = forma.quadril + balanco;
-        if (quadrilD) quadrilD.rotation.x = forma.quadril - balanco;
-        if (joelhoE) joelhoE.rotation.x = forma.joelho - Math.max(0, -balanco) * 1.2;
-        if (joelhoD) joelhoD.rotation.x = forma.joelho - Math.max(0, balanco) * 1.2;
+        if (quadrilE) quadrilE.rotation.set(forma.quadril + balanco + joelhoSobeE * 0.3, 0, -joelhoSobeE * 0.7);
+        if (quadrilD) quadrilD.rotation.set(forma.quadril - balanco + joelhoSobeD * 0.3, 0, joelhoSobeD * 0.7);
+        if (joelhoE) joelhoE.rotation.x = forma.joelho - Math.max(0, -balanco) * 1.2 - joelhoSobeE * 1.1;
+        if (joelhoD) joelhoD.rotation.x = forma.joelho - Math.max(0, balanco) * 1.2 - joelhoSobeD * 1.1;
+        // o tronco rola um pouco pro lado do braço que puxa
+        if (tronco.current) tronco.current.rotation.z = puxa * 0.12;
         // com o tablet: os dois braços pra frente, mãos nas bordas dele, na altura do peito
         segurando.current += ((alvo.item === ITEM.TABLET ? 1 : 0) - segurando.current) * Math.min(1, delta * 8);
         const s = segurando.current;
         if (bracoE) {
-            bracoE.rotation.x = (forma.braco - balanco * 0.8) * (1 - s) + 1.45 * s;
-            bracoE.rotation.z = 0.3 * s;
+            bracoE.rotation.x = (forma.braco - balanco * 0.8 + puxa * 0.3) * (1 - s) + 1.45 * s;
+            // o que puxa abre pro lado (puxando o corpo), em vez de afundar no chão
+            bracoE.rotation.z = 0.3 * s - Math.max(0, -puxa) * 0.45;
         }
         if (bracoD) {
-            bracoD.rotation.x = (forma.braco + balanco * 0.8) * (1 - s) + 1.45 * s;
-            bracoD.rotation.z = -0.3 * s;
+            bracoD.rotation.x = (forma.braco + balanco * 0.8 - puxa * 0.3) * (1 - s) + 1.45 * s;
+            bracoD.rotation.z = -0.3 * s + Math.max(0, puxa) * 0.45;
         }
         if (tablet.current) {
             tablet.current.visible = s > 0.05;
@@ -210,9 +232,10 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
         }
 
         // nome e telas acompanham a altura da cabeça
-        if (cracha.current) cracha.current.position.y = 2.08 - forma.queda;
+        const emPe = 1 - forma.deitar;
+        if (cracha.current) cracha.current.position.y = (2.08 - forma.queda) * emPe + 0.8 * forma.deitar;
         if (grupoTelas.current) {
-            grupoTelas.current.position.y = 2.22 - forma.queda;
+            grupoTelas.current.position.y = (2.22 - forma.queda) * emPe + 0.95 * forma.deitar;
             // as telas ficam sempre de frente pra quem está olhando
             grupoTelas.current.rotation.y = Math.atan2(olho.position.x - e.x, olho.position.z - e.z);
         }

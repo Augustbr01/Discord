@@ -21,7 +21,7 @@ export function lerPose(msg: any): Pose | null {
     const { x, z, rot, y = 0, pitch = 0, postura = 0, item = 0 } = msg ?? {};
     const valido = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= LIMITE;
     if (!valido(x) || !valido(z) || !valido(rot) || !valido(y) || !valido(pitch)) return null;
-    if (!Number.isInteger(postura) || postura < 0 || postura > 3) return null;
+    if (!Number.isInteger(postura) || postura < 0 || postura > 4) return null;
     if (!Number.isInteger(item) || item < 0 || item > 7) return null;
     return { x, z, y, rot, pitch, postura, item };
 }

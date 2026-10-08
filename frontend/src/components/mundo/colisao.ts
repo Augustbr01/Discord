@@ -16,6 +16,7 @@ const U = 0.0254; // 1 unidade do CS
 export const RAIO_JOGADOR = 0.3;
 export const ALTURA_CORPO = 72 * U; // 1,83 m, como no CS
 export const ALTURA_AGACHADO = 54 * U; // 1,37 m
+export const ALTURA_DEITADO = 0.5;
 // degrau mais alto que dá pra subir andando (um pouco abaixo do tampo de uma mesa)
 export const DEGRAU_MAXIMO = 0.45;
 // dá pra ficar em pé com o centro até este tanto pra fora da beirada de um móvel

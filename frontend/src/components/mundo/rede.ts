@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { gateway } from "../../lib/gateway";
 import type { PoseJogador } from "../../tipos";
 
-// postura: 0 em pé, 1 agachado, 2 deslizando, 3 sentado
-export const POSTURA = { EM_PE: 0, AGACHADO: 1, DESLIZANDO: 2, SENTADO: 3 } as const;
+// postura: 0 em pé, 1 agachado, 2 deslizando, 3 sentado, 4 deitado
+export const POSTURA = { EM_PE: 0, AGACHADO: 1, DESLIZANDO: 2, SENTADO: 3, DEITADO: 4 } as const;
 // o que a pessoa está segurando
 export const ITEM = { NADA: 0, TABLET: 1 } as const;
 // rot = pra onde olha (de lado), pitch = olhando pra cima (+) ou pra baixo (-)

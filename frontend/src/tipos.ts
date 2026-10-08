@@ -14,7 +14,7 @@ export type Voz = {
 export type MapaMembros = Map<string, Usuario>;
 
 // onde alguém está no mundo 3D: x/z no chão, y = altura dos pés (pulo, degraus do cinema),
-// virado para `rot` (radianos); postura: 0 em pé, 1 agachado, 2 deslizando, 3 sentado;
+// virado para `rot` (radianos); postura: 0 em pé, 1 agachado, 2 deslizando, 3 sentado, 4 deitado;
 // item: o que está segurando (0 nada, 1 tablet); pitch: olhando pra cima (+) ou pra baixo (-)
 export type PoseJogador = { usuarioId: string; x: number; z: number; y: number; rot: number; pitch: number; postura: number; item: number };
 
