@@ -14,6 +14,8 @@ export type ConfigMundo = {
     // segurar Espaço pula sozinho ao encostar no chão
     autoBhop: boolean;
     mostrarVelocidade: boolean;
+    // desenha o contorno do que bloqueia (paredes, móveis) — pra conferir as hitboxes
+    mostrarHitbox: boolean;
 };
 
 export const CONFIG_PADRAO: ConfigMundo = {
@@ -23,6 +25,7 @@ export const CONFIG_PADRAO: ConfigMundo = {
     fov: 90,
     autoBhop: false,
     mostrarVelocidade: false,
+    mostrarHitbox: false,
 };
 
 export const LIMITES = {

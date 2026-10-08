@@ -6,6 +6,7 @@ import { useControleSala } from "../../contexto/ControleSala";
 import { useYoutubeSala } from "../../contexto/YoutubeSala";
 import type { MapaMembros, ModoLuzes } from "../../tipos";
 import { PainelYoutube } from "../youtube/PainelYoutube";
+import { LED_PADRAO, ORDEM_PALETAS, PALETAS } from "../mundo/paletas";
 
 type Aba = "controle" | "youtube";
 
@@ -156,6 +157,43 @@ export function PainelControle({ membros, eu, telas, abaInicial = "controle", av
                             ))}
                         </div>
                         <small className="texto-fraco">No automático, o cinema apaga quando o filme começa.</small>
+                    </section>
+
+                    <section>
+                        <span className="rotulo">LEDs da sala (no 3D)</span>
+                        <div className="controle-paletas" role="radiogroup" aria-label="Cor dos LEDs">
+                            {ORDEM_PALETAS.map((p) => {
+                                const led = estado.led ?? LED_PADRAO;
+                                const ativa = led.paleta === p;
+                                return (
+                                    <button
+                                        key={p}
+                                        role="radio"
+                                        aria-checked={ativa}
+                                        className={ativa ? "ativo" : ""}
+                                        onClick={() => enviar({ acao: "LED", paleta: p, ligado: true })}
+                                        title={PALETAS[p].nome}
+                                    >
+                                        <span className="controle-paleta-cores" style={{ background: `linear-gradient(135deg, ${PALETAS[p].a} 50%, ${PALETAS[p].b} 50%)` }} />
+                                        <span>{PALETAS[p].nome}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <label className="controle-alternar">
+                            <input type="checkbox" checked={(estado.led ?? LED_PADRAO).ciclo} onChange={(e) => enviar({ acao: "LED", ciclo: e.target.checked })} />
+                            <span>
+                                <strong>Ciclo RGB</strong>
+                                <small>As cores vão girando devagar e os LEDs "respiram".</small>
+                            </span>
+                        </label>
+                        <label className="controle-alternar">
+                            <input type="checkbox" checked={(estado.led ?? LED_PADRAO).ligado} onChange={(e) => enviar({ acao: "LED", ligado: e.target.checked })} />
+                            <span>
+                                <strong>LEDs ligados</strong>
+                                <small>Fitas, painéis e o brilho da sala. Com a luz apagada, sobram só os LEDs e a TV.</small>
+                            </span>
+                        </label>
                     </section>
 
                     {estado.ultima && (

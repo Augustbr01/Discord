@@ -36,21 +36,23 @@ export function tom(cor: string, fator: number) {
 }
 
 const PERNA = new THREE.CylinderGeometry(0.03, 0.025, 0.1, 10);
-const TAMPO = new THREE.CylinderGeometry(0.6, 0.6, 0.05, 40);
-const PE = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 12);
-const BASE = new THREE.CylinderGeometry(0.32, 0.34, 0.03, 32);
-const VASO = new THREE.CylinderGeometry(0.24, 0.17, 0.52, 20);
-const TERRA = new THREE.CircleGeometry(0.22, 20);
-const TRONCO = new THREE.CylinderGeometry(0.025, 0.035, 0.9, 8);
-const FOLHA = new THREE.IcosahedronGeometry(0.28, 1);
+const TAMPO = new THREE.CylinderGeometry(0.6, 0.6, 0.05, 6);
+const PE = new THREE.CylinderGeometry(0.1, 0.22, 0.4, 6);
+const VASO = new THREE.CylinderGeometry(0.24, 0.17, 0.52, 12);
+const TERRA = new THREE.CircleGeometry(0.22, 12);
+const TRONCO = new THREE.CylinderGeometry(0.025, 0.035, 0.9, 6);
+const FOLHA = new THREE.IcosahedronGeometry(0.28, 0);
+// folhagem low-poly escura (facetada)
+const MATERIAL_FOLHA = new THREE.MeshStandardMaterial({ color: "#1e3f2f", roughness: 0.85, flatShading: true });
 const WOOFER = new THREE.CylinderGeometry(0.1, 0.1, 0.02, 24);
 const TWEETER = new THREE.CylinderGeometry(0.035, 0.035, 0.02, 16);
 
-function circulo(raio: number) {
-    const chave = `circulo|${raio}`;
+// tapete hexagonal com filete
+function hexagono(raio: number) {
+    const chave = `hexagono|${raio}`;
     let g = geometrias.get(chave);
     if (!g) {
-        g = new THREE.CircleGeometry(raio, 64);
+        g = new THREE.CircleGeometry(raio, 6);
         geometrias.set(chave, g);
     }
     return g;
@@ -60,7 +62,7 @@ function anel(raio: number) {
     const chave = `anel|${raio}`;
     let g = geometrias.get(chave);
     if (!g) {
-        g = new THREE.RingGeometry(raio - 0.32, raio - 0.22, 64);
+        g = new THREE.RingGeometry(raio * 0.88, raio * 0.9, 6);
         geometrias.set(chave, g);
     }
     return g;
@@ -78,7 +80,7 @@ type Peca = {
 function pecasSofa(cor: string): Peca[] {
     const tecido = material(cor, 0.95);
     const almofada = material(tom(cor, 0.1), 0.95);
-    const perna = material("#1a1714", 0.5, 0.2);
+    const perna = material("#0c0c0f", 0.5, 0.3);
     return [
         { geometria: caixaArredondada(2.4, 0.36, 0.95, 0.06), material: tecido, pos: [0, 0.28, 0] },
         { geometria: caixaArredondada(2.4, 0.56, 0.24, 0.08), material: tecido, pos: [0, 0.7, -0.36] },
@@ -89,12 +91,12 @@ function pecasSofa(cor: string): Peca[] {
     ];
 }
 
+// mesa hexagonal preta acetinada
 function pecasMesa(): Peca[] {
-    const metal = material("#2a2522", 0.4, 0.5);
+    const preto = material("#0c0c0f", 0.25, 0.4);
     return [
-        { geometria: TAMPO, material: material("#e8e2d8", 0.25), pos: [0, 0.46, 0] },
-        { geometria: PE, material: metal, pos: [0, 0.24, 0] },
-        { geometria: BASE, material: metal, pos: [0, 0.015, 0] },
+        { geometria: TAMPO, material: preto, pos: [0, 0.44, 0] },
+        { geometria: PE, material: material("#0c0c0f", 0.4), pos: [0, 0.2, 0] },
     ];
 }
 
@@ -106,22 +108,22 @@ function pecasPlanta(semente: number): Peca[] {
         return s / 2147483647;
     };
     return [
-        { geometria: VASO, material: material("#d9d3ca", 0.6), pos: [0, 0.26, 0] },
-        { geometria: TERRA, material: material("#2b2119", 1), pos: [0, 0.5, 0], giro: [-Math.PI / 2, 0, 0] },
-        { geometria: TRONCO, material: material("#4a3628", 0.9), pos: [0, 0.9, 0] },
+        { geometria: VASO, material: material("#0c0c0e", 0.5), pos: [0, 0.26, 0] },
+        { geometria: TERRA, material: material("#141210", 1), pos: [0, 0.5, 0], giro: [-Math.PI / 2, 0, 0] },
+        { geometria: TRONCO, material: material("#2a1d14", 0.9), pos: [0, 0.9, 0] },
         ...Array.from({ length: 6 }, (_, i): Peca => ({
             geometria: FOLHA,
-            material: material(["#3f6b45", "#4f7d4a", "#36593b", "#5a8a52"][i % 4], 0.85),
+            material: MATERIAL_FOLHA,
             pos: [(r() - 0.5) * 0.45, 0.95 + i * 0.13 + r() * 0.12, (r() - 0.5) * 0.45],
             escala: 0.75 + r() * 0.5,
         })),
     ];
 }
 
-// poltrona de cinema: assento e encosto de veludo, braços e laterais escuros
+// poltrona de cinema: assento e encosto estofados (grafite), braços e laterais pretos
 function pecasPoltrona(cor: string): Peca[] {
-    const veludo = material(cor, 1);
-    const escuro = material("#1c1a19", 0.5, 0.3);
+    const veludo = material(cor, 0.95);
+    const escuro = material("#0e0e11", 0.45, 0.3);
     return [
         { geometria: caixaArredondada(0.56, 0.12, 0.5, 0.04), material: veludo, pos: [0, 0.45, 0.02] },
         { geometria: caixaArredondada(0.56, 0.64, 0.12, 0.05), material: veludo, pos: [0, 0.82, -0.25], giro: [-0.12, 0, 0] },
@@ -148,8 +150,8 @@ function pecasTorre(): Peca[] {
 
 // pedestal onde fica o tablet do cinema
 function pecasPedestal(): Peca[] {
-    const escuro = material("#1c1a19", 0.4, 0.5);
-    const latao = material("#b8955c", 0.32, 0.85);
+    const escuro = material("#0c0c0f", 0.4, 0.5);
+    const latao = material("#2c2d33", 0.3, 0.85);
     return [
         { geometria: caixaArredondada(0.46, 0.04, 0.46, 0.015), material: escuro, pos: [0, 0.02, 0] },
         { geometria: caixaArredondada(0.12, 0.98, 0.12, 0.03), material: latao, pos: [0, 0.51, 0] },
@@ -159,8 +161,8 @@ function pecasPedestal(): Peca[] {
 
 function pecasTapete(cor: string, raio: number): Peca[] {
     return [
-        { geometria: circulo(raio), material: material(cor, 1), pos: [0, 0.006, 0], giro: [-Math.PI / 2, 0, 0] },
-        { geometria: anel(raio), material: material(tom(cor, 0.25), 1), pos: [0, 0.007, 0], giro: [-Math.PI / 2, 0, 0] },
+        { geometria: hexagono(raio), material: material(cor, 1), pos: [0, 0.006, 0], giro: [-Math.PI / 2, 0, 0] },
+        { geometria: anel(raio), material: material("#2c2c36", 1), pos: [0, 0.007, 0], giro: [-Math.PI / 2, 0, 0] },
     ];
 }
 
@@ -168,15 +170,15 @@ function pecas(m: Movel, i: number): Peca[] {
     if (m.tipo === "sofa") return pecasSofa(m.cor ?? "#6b625a");
     if (m.tipo === "mesa") return pecasMesa();
     if (m.tipo === "planta") return pecasPlanta(i * 7919 + 13);
-    if (m.tipo === "poltrona") return pecasPoltrona(m.cor ?? "#7a1f24");
+    if (m.tipo === "poltrona") return pecasPoltrona(m.cor ?? "#2a2a33");
     if (m.tipo === "torre") return pecasTorre();
     if (m.tipo === "pedestal") return pecasPedestal();
     return pecasTapete(m.cor ?? "#3b3631", m.raio ?? 2.4);
 }
 
-type Grupo = { geometria: THREE.BufferGeometry; material: THREE.Material; matrizes: THREE.Matrix4[] };
+export type Grupo = { geometria: THREE.BufferGeometry; material: THREE.Material; matrizes: THREE.Matrix4[] };
 
-function Instancias({ geometria, material: mat, matrizes }: Grupo) {
+export function Instancias({ geometria, material: mat, matrizes }: Grupo) {
     const ref = useRef<THREE.InstancedMesh>(null);
     useLayoutEffect(() => {
         const malha = ref.current;

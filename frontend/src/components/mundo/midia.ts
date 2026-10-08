@@ -114,16 +114,121 @@ export function useTexturaVideo(track: Track | undefined, largura: number, altur
 const fotos = new Map<string, Promise<THREE.Texture>>();
 const carregador = new THREE.TextureLoader().setCrossOrigin("anonymous");
 
+// URL própria pro 3D: o <img> do app guarda no cache do navegador a mesma foto pedida
+// sem CORS, e o WebGL (que pede com CORS) recebia essa cópia e recusava
+function urlDoTresD(url: string) {
+    return `${url}${url.includes("?") ? "&" : "?"}textura=3d`;
+}
+
 function carregarFoto(url: string) {
     let p = fotos.get(url);
     if (!p) {
-        p = carregador.loadAsync(url).then((t) => {
-            t.colorSpace = THREE.SRGBColorSpace;
-            return t;
-        });
+        p = carregador.loadAsync(urlDoTresD(url)).then(
+            (t) => {
+                t.colorSpace = THREE.SRGBColorSpace;
+                return t;
+            },
+            (erro) => {
+                // não guarda a falha (ex.: o bucket ainda sem CORS): a próxima vez que o boneco
+                // aparecer tenta de novo, sem precisar recarregar a página
+                fotos.delete(url);
+                throw erro;
+            },
+        );
         fotos.set(url, p);
     }
     return p;
+}
+
+// Foto animada (GIF, que o upload vira WebP animado): o TextureLoader só pega o primeiro quadro.
+// Aqui o ImageDecoder do navegador decodifica um quadro de cada vez, no tempo de cada um, e
+// desenha num canvas que é a textura. Uma animação por URL, dividida entre os bonecos que usam
+// a mesma foto; para quando o último some. Sem ImageDecoder (navegador antigo), fica parada
+type Animada = { textura: THREE.CanvasTexture; usos: number; parar: () => void };
+const animadas = new Map<string, Promise<Animada | null>>();
+
+async function abrirAnimada(url: string): Promise<Animada | null> {
+    if (typeof ImageDecoder === "undefined") return null;
+    const resposta = await fetch(urlDoTresD(url), { mode: "cors" });
+    if (!resposta.ok) return null;
+    const tipo = resposta.headers.get("content-type")?.split(";")[0] ?? "";
+    if (!tipo.startsWith("image/") || !(await ImageDecoder.isTypeSupported(tipo))) return null;
+
+    const decodificador = new ImageDecoder({ data: await resposta.arrayBuffer(), type: tipo });
+    // as faixas primeiro (sem isso selectedTrack vem null), depois o arquivo inteiro (frameCount final)
+    await decodificador.tracks.ready;
+    await decodificador.completed;
+    const faixa = decodificador.tracks.selectedTrack;
+    if (!faixa || !faixa.animated || faixa.frameCount < 2) {
+        decodificador.close();
+        return null;
+    }
+
+    const primeiro = (await decodificador.decode({ frameIndex: 0 })).image;
+    const canvas = document.createElement("canvas");
+    canvas.width = primeiro.displayWidth;
+    canvas.height = primeiro.displayHeight;
+    primeiro.close();
+    const ctx = canvas.getContext("2d")!;
+    const textura = new THREE.CanvasTexture(canvas);
+    textura.colorSpace = THREE.SRGBColorSpace;
+
+    let quadro = 0;
+    let parado = false;
+    let espera: number | undefined;
+    const passo = async () => {
+        if (parado) return;
+        try {
+            const { image } = await decodificador.decode({ frameIndex: quadro });
+            if (parado) {
+                image.close();
+                return;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            textura.needsUpdate = true;
+            // duração em microssegundos; GIF com 0 ou quase 0 os navegadores tocam a 100 ms
+            const ms = (image.duration ?? 0) / 1000;
+            image.close();
+            quadro = (quadro + 1) % faixa.frameCount;
+            espera = window.setTimeout(passo, ms < 20 ? 100 : ms);
+        } catch {
+            // quadro com defeito: recomeça do primeiro
+            quadro = 0;
+            espera = window.setTimeout(passo, 100);
+        }
+    };
+    void passo();
+
+    return {
+        textura,
+        usos: 0,
+        parar: () => {
+            parado = true;
+            window.clearTimeout(espera);
+            decodificador.close();
+            textura.dispose();
+        },
+    };
+}
+
+// pega a animação (ou null se a foto não for animada) e marca mais um boneco usando
+async function usarAnimada(url: string) {
+    let p = animadas.get(url);
+    if (!p) {
+        p = abrirAnimada(url).catch(() => null);
+        animadas.set(url, p);
+    }
+    const a = await p;
+    if (a) a.usos++;
+    return a;
+}
+
+function soltarAnimada(url: string, a: Animada) {
+    a.usos--;
+    if (a.usos > 0) return;
+    a.parar();
+    animadas.delete(url);
 }
 
 export function useTexturaAvatar(nome: string, url: string | null | undefined) {
@@ -133,13 +238,25 @@ export function useTexturaAvatar(nome: string, url: string | null | undefined) {
         const foto = avatarReal(url);
         if (!foto) return;
         let ativo = true;
+        let animada: Animada | null = null;
+        // a foto parada aparece logo; se for animada, troca pela animação quando ela estiver pronta
         carregarFoto(foto)
             .then((t) => {
-                if (ativo) setTextura(t);
+                if (ativo && !animada) setTextura(t);
             })
             .catch(() => {});
+        usarAnimada(foto).then((a) => {
+            if (!a) return;
+            if (!ativo) {
+                soltarAnimada(foto, a);
+                return;
+            }
+            animada = a;
+            setTextura(a.textura);
+        });
         return () => {
             ativo = false;
+            if (animada) soltarAnimada(foto, animada);
         };
     }, [url]);
 

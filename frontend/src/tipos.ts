@@ -42,6 +42,9 @@ export type ComandoYoutube =
 // controle da sala (o "tablet"): o que aparece na TV, volume e surround da TV, e as luzes
 export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "DESLIGADA";
 export type ModoLuzes = "AUTO" | "ACESAS" | "APAGADAS";
+// LEDs da sala gamer. paleta null = a cor padrão da sala (cada sala tem a sua)
+export type PaletaLed = "NEON" | "BRASA" | "AURORA" | "SAKURA" | "MONO";
+export type EstadoLed = { paleta: PaletaLed | null; ciclo: boolean; ligado: boolean };
 export type EstadoSala = {
     canalId: string;
     // TELA: a tela compartilhada de `identidade` (usuarioId)
@@ -49,6 +52,7 @@ export type EstadoSala = {
     volume: number;
     surround: boolean;
     luzes: ModoLuzes;
+    led: EstadoLed;
     ultima: { usuarioId: string; acao: string } | null;
 };
 export type ComandoSala =
@@ -56,7 +60,8 @@ export type ComandoSala =
     | { acao: "TV_TELA"; identidade: string }
     | { acao: "VOLUME"; volume: number }
     | { acao: "SURROUND"; ligado: boolean }
-    | { acao: "LUZES"; modo: ModoLuzes };
+    | { acao: "LUZES"; modo: ModoLuzes }
+    | { acao: "LED"; paleta?: PaletaLed; ciclo?: boolean; ligado?: boolean };
 
 // eventos que o servidor empurra pelo WebSocket (/api/gateway).
 // precisa bater com o `Evento` do back (eventosConexao.ts)

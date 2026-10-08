@@ -292,6 +292,13 @@
     display: none;
 }
 
+/* chat da call: o painel ocupa a largura toda da lateral */
+.mundo-chat-call .chat-sala {
+    flex: 1;
+    width: auto;
+    border-left: none;
+}
+
 .mundo-chat-fechar {
     position: absolute;
     top: 10px;

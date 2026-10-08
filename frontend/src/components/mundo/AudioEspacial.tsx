@@ -27,6 +27,8 @@ export type SomDaTV = {
     volume: number;
     // até quantos metros as caixas soam cheias (sala maior, como o cinema, precisa de mais)
     alcance: number;
+    // duração do reverb das traseiras, em segundos (a sala gamer tem ripas acústicas: soa mais seca)
+    reverb: number;
 };
 
 type Props = {
@@ -62,16 +64,16 @@ function novoPanner(ctx: BaseAudioContext, posicao?: { x: number; y: number; z: 
     return panner;
 }
 
-// "sala" sintética pro reverb das traseiras: ruído que vai sumindo em ~1,2 s, depois de 20 ms
+// "sala" sintética pro reverb das traseiras: ruído que vai sumindo em `duracao` s, depois de 20 ms
 // de silêncio. Cada caixa com o seu ruído (semente diferente), pra as duas não soarem iguais
 const impulsos = new Map<string, AudioBuffer>();
-function impulsoDaSala(ctx: BaseAudioContext, semente: number) {
-    const chave = `${ctx.sampleRate}|${semente}`;
+function impulsoDaSala(ctx: BaseAudioContext, semente: number, duracao: number) {
+    const chave = `${ctx.sampleRate}|${semente}|${duracao}`;
     let buffer = impulsos.get(chave);
     if (!buffer) {
         const taxa = ctx.sampleRate;
         const atraso = Math.floor(taxa * 0.02);
-        const tamanho = Math.floor(taxa * 1.2);
+        const tamanho = Math.floor(taxa * duracao);
         buffer = ctx.createBuffer(1, tamanho, taxa);
         const dados = buffer.getChannelData(0);
         let s = semente * 9301 + 49297;
@@ -161,7 +163,7 @@ export function ligarNasCaixas(ctx: BaseAudioContext, entrada: AudioNode, saida:
     nos.push(inteiro);
     traseiras.forEach((caixa, n) => {
         const sala = ctx.createConvolver();
-        sala.buffer = impulsoDaSala(ctx, n + 1);
+        sala.buffer = impulsoDaSala(ctx, n + 1, tv.reverb);
         // o convolver do navegador normaliza o reverb e ele sai bem baixo: este ganho deixa as
         // traseiras em ~30% do volume da frente (som em volta sem roubar a frente)
         const quanto = ctx.createGain();

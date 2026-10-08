@@ -38,6 +38,9 @@ export type EstadoYoutube = {
 // controle da sala (o "tablet"): o que aparece na TV, volume e surround da TV, e as luzes
 export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "DESLIGADA"
 export type ModoLuzes = "AUTO" | "ACESAS" | "APAGADAS"
+// LEDs da sala gamer. paleta null = a cor padrão da sala (cada sala tem a sua)
+export type PaletaLed = "NEON" | "BRASA" | "AURORA" | "SAKURA" | "MONO"
+export type EstadoLed = { paleta: PaletaLed | null; ciclo: boolean; ligado: boolean }
 export type EstadoSala = {
     canalId: string;
     // TELA: a tela compartilhada de `identidade` (usuarioId)
@@ -45,6 +48,7 @@ export type EstadoSala = {
     volume: number;
     surround: boolean;
     luzes: ModoLuzes;
+    led: EstadoLed;
     ultima: { usuarioId: string; acao: string } | null;
 }
 

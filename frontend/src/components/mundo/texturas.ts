@@ -2,7 +2,7 @@
 // As que não dependem de texto ficam em cache (uma só pra cena inteira).
 import * as THREE from "three";
 
-const FONTE = '"Inter Variable", "Inter", system-ui, sans-serif';
+export const FONTE = '"Inter Variable", "Inter", system-ui, sans-serif';
 
 // número pseudoaleatório estável: a mesma semente sempre desenha a mesma textura
 function sorteio(semente: number) {
@@ -126,19 +126,105 @@ export function texturaCarpete() {
     });
 }
 
-// ripado de madeira vertical (parede de destaque do hall)
+// ripado acústico vertical em grafite (paredes de destaque do hall)
 export function texturaRipado() {
     return emCache("ripado", () => {
         const { canvas, ctx } = tela(512, 256);
         const r = sorteio(5);
-        ctx.fillStyle = "#151417";
+        ctx.fillStyle = "#08080a";
         ctx.fillRect(0, 0, 512, 256);
         const ripas = 16;
         const passo = 512 / ripas;
         for (let i = 0; i < ripas; i++) {
-            ctx.fillStyle = `hsl(28, 30%, ${30 + r() * 6}%)`;
+            ctx.fillStyle = `hsl(240, 8%, ${10 + r() * 2}%)`;
             ctx.fillRect(i * passo + passo * 0.18, 0, passo * 0.64, 256);
         }
+        return virarTextura(canvas, true);
+    });
+}
+
+// piso escuro semibrilho em placas grandes (hall, corredor e salas). A cor fina vem do material
+export function texturaPisoEscuro() {
+    return emCache("piso-escuro", () => {
+        const { canvas, ctx } = tela(512, 512);
+        const r = sorteio(19);
+        ctx.fillStyle = "#c8c8cc";
+        ctx.fillRect(0, 0, 512, 512);
+        // variação leve de tom entre as placas (2 × 2 por repetição)
+        for (let i = 0; i < 2; i++) {
+            for (let j = 0; j < 2; j++) {
+                ctx.fillStyle = `rgba(0, 0, 0, ${0.04 + r() * 0.08})`;
+                ctx.fillRect(i * 256, j * 256, 256, 256);
+            }
+        }
+        for (let i = 0; i < 3000; i++) {
+            ctx.fillStyle = r() > 0.5 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.07)";
+            ctx.fillRect(r() * 512, r() * 512, 1 + r() * 2, 1 + r() * 2);
+        }
+        // juntas
+        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+        ctx.fillRect(0, 0, 512, 2);
+        ctx.fillRect(0, 256, 512, 2);
+        ctx.fillRect(0, 0, 2, 512);
+        ctx.fillRect(256, 0, 2, 512);
+        return virarTextura(canvas, true);
+    });
+}
+
+// máscara (alphaMap) do brilho dos LEDs: some suave nas bordas, nunca um retângulo duro
+export function texturaBrilho() {
+    return emCache("brilho", () => {
+        const { canvas, ctx } = tela(256, 256);
+        const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+        g.addColorStop(0, "#fff");
+        g.addColorStop(0.45, "#888");
+        g.addColorStop(1, "#000");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 256, 256);
+        return new THREE.CanvasTexture(canvas);
+    });
+}
+
+// máscara da luz da sanca lavando a parede: forte em cima, some pra baixo e nas pontas
+export function texturaLavagem() {
+    return emCache("lavagem", () => {
+        const { canvas, ctx } = tela(256, 256);
+        const v = ctx.createLinearGradient(0, 0, 0, 256);
+        v.addColorStop(0, "#fff");
+        v.addColorStop(0.25, "#777");
+        v.addColorStop(1, "#000");
+        ctx.fillStyle = v;
+        ctx.fillRect(0, 0, 256, 256);
+        // escurece as pontas
+        const h = ctx.createLinearGradient(0, 0, 256, 0);
+        h.addColorStop(0, "rgba(0,0,0,1)");
+        h.addColorStop(0.06, "rgba(0,0,0,0)");
+        h.addColorStop(0.94, "rgba(0,0,0,0)");
+        h.addColorStop(1, "rgba(0,0,0,1)");
+        ctx.fillStyle = h;
+        ctx.fillRect(0, 0, 256, 256);
+        return new THREE.CanvasTexture(canvas);
+    });
+}
+
+// céu de estrelas (fibra ótica) pro teto do cinema: pontinhos de luz sobre fundo transparente
+export function texturaEstrelas() {
+    return emCache("estrelas", () => {
+        const { canvas, ctx } = tela(1024, 1024);
+        const r = sorteio(23);
+        for (let i = 0; i < 520; i++) {
+            const x = r() * 1024;
+            const y = r() * 1024;
+            const raio = 0.8 + r() * r() * 2.6;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, raio * 2.2);
+            const fria = r() > 0.6;
+            g.addColorStop(0, fria ? "rgba(200, 220, 255, 1)" : "rgba(255, 255, 255, 1)");
+            g.addColorStop(1, "rgba(255, 255, 255, 0)");
+            ctx.globalAlpha = 0.35 + r() * 0.65;
+            ctx.fillStyle = g;
+            ctx.fillRect(x - raio * 3, y - raio * 3, raio * 6, raio * 6);
+        }
+        ctx.globalAlpha = 1;
         return virarTextura(canvas, true);
     });
 }
@@ -148,9 +234,9 @@ export function texturaLuz() {
     return emCache("luz", () => {
         const { canvas, ctx } = tela(256, 256);
         const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-        g.addColorStop(0, "rgba(255, 226, 180, 0.55)");
-        g.addColorStop(0.45, "rgba(255, 214, 160, 0.2)");
-        g.addColorStop(1, "rgba(255, 214, 160, 0)");
+        g.addColorStop(0, "rgba(226, 232, 255, 0.5)");
+        g.addColorStop(0.45, "rgba(214, 222, 255, 0.18)");
+        g.addColorStop(1, "rgba(214, 222, 255, 0)");
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, 256, 256);
         return virarTextura(canvas);

@@ -85,6 +85,7 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                             onMudar={(v) => mudarConfig({ autoBhop: v })}
                         />
                         <Alternar titulo="Mostrar velocidade" detalhe="Em unidades do CS (250 = correndo)." ligado={cfg.mostrarVelocidade} onMudar={(v) => mudarConfig({ mostrarVelocidade: v })} />
+                        <Alternar titulo="Mostrar hitboxes" detalhe="Exibe o contorno das áreas de colisão de paredes e móveis." ligado={cfg.mostrarHitbox} onMudar={(v) => mudarConfig({ mostrarHitbox: v })} />
                     </section>
 
                     <section className="mundo-config-teclas">

@@ -10,9 +10,10 @@
 //                  hall (quadros dos canais de texto nas paredes laterais)
 //            z = H  ── elevador ──
 //
-// As salas entram no lado do corredor que estiver mais curto. Sala comum ocupa 8 m de
-// corredor; cinema ocupa 16 m (telão no fundo, poltronas em degraus subindo pra trás).
+// As salas entram no lado do corredor que estiver mais curto. Sala comum (a sala gamer) ocupa
+// 8 m de corredor; cinema ocupa 16 m (telão no fundo, poltronas em degraus subindo pra trás).
 import type { Canal, ModeloSala } from "../../api";
+import { solidoDeRet, type Solido } from "./colisao";
 
 export type Ret = { x1: number; z1: number; x2: number; z2: number };
 export type TipoParede = "parede" | "hall" | "metal";
@@ -49,22 +50,25 @@ export type SalaPlanta = {
     // assentos da sala, na ordem em que quem está pelo modo clássico vai ocupando
     assentos: Assento[];
     caixasSom: CaixaSom[];
-    // o controle da sala: deitado na mesa de centro (sala comum) ou num pedestal (cinema)
+    // o controle da sala: deitado na mesa de centro (sala gamer) ou num pedestal (cinema)
     tablet: Ponto & { y: number; rot: number; inclinacao: number };
     // quem está pelo modo clássico e não coube nos assentos fica em pé aqui
     lugares: (Ponto & { rot: number })[];
-    cor: string;
+    // holograma do chat da call (sala gamer): o retângulo dele no andar, pra saber se a mira está
+    // em cima. Centro (x, y, z), normal (nx, nz: pra onde a tela olha) e eixo da largura (ux, uz)
+    chat: (Ponto & { y: number; nx: number; nz: number; ux: number; uz: number; largura: number; altura: number }) | null;
 };
 
 export type Quadro = Ponto & { canalId: string; rot: number };
-export type Interativo = Ponto & { id: string; raio: number; tipo: "elevador" | "texto" | "tv" | "assento" | "tablet"; canalId?: string; assentoId?: string };
+export type Interativo = Ponto & { id: string; raio: number; tipo: "elevador" | "texto" | "tv" | "assento" | "tablet" | "chat"; canalId?: string; assentoId?: string };
 
 export type Planta = {
     paredes: Parede[];
     // pedaço de parede acima das portas: só desenho, não bloqueia
     vergas: Parede[];
     moveis: Movel[];
-    colisao: Ret[];
+    // tudo que o jogador não atravessa (paredes, degraus, móveis), no formato e altura de verdade
+    solidos: Solido[];
     salas: SalaPlanta[];
     assentos: Assento[];
     degraus: Degrau[];
@@ -83,9 +87,7 @@ export const ALTURA_HALL = 4.2;
 export const ALTURA_PORTA = 2.4;
 export const ALTURA_ELEVADOR = 2.6;
 export const ALTURA_CINEMA = 5;
-export const RAIO_JOGADOR = 0.3;
-// degrau mais alto que dá pra subir andando
-export const DEGRAU_MAXIMO = 0.45;
+export { DEGRAU_MAXIMO, RAIO_JOGADOR } from "./colisao";
 
 const LARGURA = 10; // metade da largura do prédio
 const CORREDOR = 2; // metade da largura do corredor
@@ -100,9 +102,6 @@ const ELEVADOR = 1.3; // metade da largura da cabine
 const FUNDO_ELEVADOR = 2.4;
 const QUADROS_POR_PAREDE = 4;
 const ESPACO_QUADRO = 2.6;
-
-// tons sóbrios pros detalhes de cada sala (tapete, painel atrás da TV)
-const CORES_SALA = ["#a0644a", "#6f8466", "#56708a", "#a88a4f", "#7d5e7a", "#4f7f7c"];
 
 const e = ESPESSURA / 2;
 
@@ -123,29 +122,42 @@ function paredeZ(x: number, z1: number, z2: number, topo: number, tipo: TipoPare
     return paredeX(0, z1, z2, topo, tipo, vaos).map((p) => ({ ...p, x1: x - e, x2: x + e, z1: p.x1, z2: p.x2 }));
 }
 
-function hashTexto(texto: string) {
-    let h = 2166136261;
-    for (let i = 0; i < texto.length; i++) {
-        h ^= texto.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
+// um ponto com giro (o "espaço" de um móvel, de uma sala, de uma asa do sofá)
+type Referencia = Ponto & { rot: number };
+
+// um espaço dentro de outro: o ponto (lx, lz) do pai, girado mais `giro`
+function compor(pai: Referencia, lx: number, lz: number, giro = 0): Referencia {
+    return { ...doMovel(pai, lx, lz), rot: pai.rot + giro };
 }
 
-// o quanto um móvel ocupa no chão (pra colisão)
-function areaMovel(m: Movel): Ret | null {
-    const meia = (largura: number, fundo: number): Ret => {
-        // só giros de 90°: troca largura e fundo quando o móvel está de lado
-        const deLado = Math.abs(Math.sin(m.rot)) > 0.5;
-        const [lx, lz] = deLado ? [fundo, largura] : [largura, fundo];
-        return { x1: m.x - lx / 2, x2: m.x + lx / 2, z1: m.z - lz / 2, z2: m.z + lz / 2 };
-    };
-    if (m.tipo === "sofa") return meia(2.4, 0.95);
-    if (m.tipo === "mesa") return meia(1.2, 1.2);
-    if (m.tipo === "planta") return meia(0.6, 0.6);
-    if (m.tipo === "torre" || m.tipo === "pedestal") return meia(0.4, 0.4);
-    // poltronas do cinema: a fileira inteira bloqueia junto (ver salaCinema)
-    return null;
+// caixa de meia-largura hx e meio-fundo hz, de y = base até y = topo, no espaço `r`
+function caixa(r: Referencia, hx: number, hz: number, topo: number, base = 0): Solido {
+    return { forma: "caixa", x: r.x, z: r.z, rot: r.rot, hx, hz, base, topo };
+}
+
+function cilindro(p: Ponto, raio: number, topo: number, base = 0): Solido {
+    return { forma: "cilindro", x: p.x, z: p.z, raio, base, topo };
+}
+
+// o que um móvel ocupa, peça por peça, com as medidas do desenho (Moveis.tsx)
+function solidosDoMovel(m: Movel): Solido[] {
+    const y = m.y ?? 0;
+    if (m.tipo === "sofa") {
+        // frente pra +z: assento com almofadas, encosto atrás e os dois braços
+        return [
+            caixa(m, 1.2, 0.475, y + 0.59, y),
+            caixa(compor(m, 0, -0.36), 1.2, 0.12, y + 0.98, y),
+            ...[-1.09, 1.09].map((x) => caixa(compor(m, x, 0), 0.11, 0.475, y + 0.76, y)),
+        ];
+    }
+    // tampo sextavado (a mesa do hall)
+    if (m.tipo === "mesa") return [cilindro(m, 0.56, y + 0.465, y)];
+    // vaso e a copa (a copa só pega da altura do vaso pra cima)
+    if (m.tipo === "planta") return [cilindro(m, 0.24, y + 0.52, y), cilindro(m, 0.36, y + 1.85, y + 0.6)];
+    if (m.tipo === "torre") return [caixa(m, 0.16, 0.17, y + 1.1, y)];
+    if (m.tipo === "pedestal") return [cilindro(m, 0.23, y + 1.02, y)];
+    // tapete: plano no chão. Poltronas do cinema: a fileira inteira bloqueia junto (ver salaCinema)
+    return [];
 }
 
 // leva um ponto do espaço do móvel (lx, lz) pro andar
@@ -158,13 +170,6 @@ function doMovel(m: Ponto & { rot: number }, lx: number, lz: number): Ponto {
 // os três lugares de um sofá; quem senta olha pra frente do sofá
 function assentosDoSofa(m: Movel, salaId: string | null, prefixo: string): Assento[] {
     return [0, -0.65, 0.65].map((lx, i) => ({ ...doMovel(m, lx, 0.05), id: `${prefixo}:${i}`, salaId, y: 0, rot: m.rot + Math.PI }));
-}
-
-// altura do chão num ponto (só muda nos degraus do cinema)
-export function alturaChao(degraus: Degrau[], p: Ponto) {
-    let h = 0;
-    for (const d of degraus) if (dentro(d, p) && d.topo > h) h = d.topo;
-    return h;
 }
 
 export function dentro(r: Ret, p: Ponto, folga = 0) {
@@ -183,7 +188,7 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
     const vergas: Parede[] = [];
     const moveis: Movel[] = [];
     const degraus: Degrau[] = [];
-    const colisaoExtra: Ret[] = [];
+    const solidosExtra: Solido[] = [];
 
     // ---------- hall ----------
     paredes.push(...paredeX(H, -LARGURA, LARGURA, ALTURA_HALL, "hall", [[-1.1, 1.1]]));
@@ -233,11 +238,10 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
             lado,
             ret: { x1: xMin + e, x2: xMax - e, z1: zLonge + e, z2: zPerto - e },
             altura,
-            cor: CORES_SALA[hashTexto(canal.id) % CORES_SALA.length],
         };
         return cinema
-            ? salaCinema(base, zLonge, zPerto, moveis, degraus, colisaoExtra)
-            : salaComum(base, zLonge, zPerto, moveis);
+            ? salaCinema(base, zLonge, zPerto, moveis, degraus, solidosExtra)
+            : salaComum(base, zLonge, zPerto, solidosExtra);
     });
     const fim = -Math.max(VAGA, usado[-1], usado[1]) - 2;
 
@@ -269,10 +273,10 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
     // ---------- móveis do hall ----------
     const zLounge = H / 2;
     moveis.push(
-        { tipo: "tapete", x: 5.6, z: zLounge, rot: 0, cor: "#3b3631", raio: 3 },
+        { tipo: "tapete", x: 5.6, z: zLounge, rot: 0, cor: "#19191f", raio: 3 },
         { tipo: "mesa", x: 5.6, z: zLounge, rot: 0 },
-        { tipo: "sofa", x: 5.6, z: zLounge - 2.1, rot: 0, cor: "#8c7b6b" },
-        { tipo: "sofa", x: 5.6, z: zLounge + 2.1, rot: Math.PI, cor: "#8c7b6b" },
+        { tipo: "sofa", x: 5.6, z: zLounge - 2.1, rot: 0, cor: "#26262d" },
+        { tipo: "sofa", x: 5.6, z: zLounge + 2.1, rot: Math.PI, cor: "#26262d" },
         { tipo: "planta", x: -2.1, z: H - 0.7, rot: 0 },
         { tipo: "planta", x: 2.1, z: H - 0.7, rot: 0 },
         { tipo: "planta", x: -LARGURA + 0.7, z: 0.8, rot: 0 },
@@ -314,19 +318,23 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
         }),
         ...assentos.map((a): Interativo => ({ id: `assento-${a.id}`, tipo: "assento", assentoId: a.id, x: a.x, z: a.z, raio: 1.15 })),
         ...salas.map((s): Interativo => ({ id: `tablet-${s.canalId}`, tipo: "tablet", canalId: s.canalId, x: s.tablet.x, z: s.tablet.z, raio: 1.5 })),
+        // holograma do chat: só com a mira em cima da tela dele (ver Jogador), até 9 m
+        ...salas.flatMap((s): Interativo[] => (s.chat ? [{ id: `chat-${s.canalId}`, tipo: "chat", canalId: s.canalId, x: s.chat.x, z: s.chat.z, raio: 9 }] : [])),
     ];
 
-    const colisao: Ret[] = [
-        ...paredes,
-        ...moveis.map(areaMovel).filter((r): r is Ret => r !== null),
-        ...colisaoExtra,
+    const solidos: Solido[] = [
+        ...paredes.map((p) => solidoDeRet(p, p.base, p.topo)),
+        // degraus do cinema: dá pra subir andando (cada um tem menos que DEGRAU_MAXIMO)
+        ...degraus.map((d) => solidoDeRet(d, 0, d.topo)),
+        ...moveis.flatMap(solidosDoMovel),
+        ...solidosExtra,
     ];
 
     return {
         paredes,
         vergas,
         moveis,
-        colisao,
+        solidos,
         salas,
         assentos,
         degraus,
@@ -340,78 +348,159 @@ export function gerarPlanta(canais: Pick<Canal, "id" | "tipo" | "modelo">[]): Pl
     };
 }
 
-type BaseSala = Pick<SalaPlanta, "canalId" | "lado" | "ret" | "altura" | "cor">;
+type BaseSala = Pick<SalaPlanta, "canalId" | "lado" | "ret" | "altura">;
 
-// sala comum: dois sofás de frente um pro outro, mesa no meio e a TV na parede de fora
-function salaComum(base: BaseSala, zLonge: number, zPerto: number, moveis: Movel[]): SalaPlanta {
-    const { lado, canalId, cor } = base;
+// ---------- sala gamer (a sala comum) ----------
+// Medidas no "espaço da sala": origem no centro do piso, -z = parede da TV, +x = lado da porta.
+// O andar leva pro mundo girando pelo tv.rot da sala (ver noMundo). O desenho (SalaGamer.tsx)
+// usa as mesmas medidas, então colisão, assentos e móveis batem.
+export const GAMER = {
+    meia: 3.9, // metade do vão interno: a sala tem 7,8 × 7,8 m
+    tvZ: -3.7,
+    mesa: { x: 0, z: 0.2, raio: 0.58 },
+    // sofá em V: dois módulos com o vértice pra trás, abertos pra TV. fora = lado do braço
+    asas: [
+        { x: -1.2, z: 2.15, giro: -0.48, fora: -1 },
+        { x: 1.2, z: 2.15, giro: 0.48, fora: 1 },
+    ],
+    comprimentoAsa: 2.4,
+    mesinha: { x: 0, z: 3.0, raio: 0.28 },
+    rack: { z: -3.5, largura: 3.2 },
+    torres: [-2.55, 2.55].map((x) => ({ x, z: -3.45 })),
+    puffs: [
+        { x: -2.95, z: -1.35, giro: -0.5 },
+        { x: -3.0, z: 0.35, giro: -0.8 },
+    ],
+    fliperama: { x: 3.25, z: -2.85, giro: -0.7 },
+    vaso: { x: -3.4, z: -3.35 },
+    prateleira: { z: -1.2, comprimento: 2.0 },
+    portaX: 2.6,
+    // holograma do chat da call na parede da porta, atrás do sofá (quem está no sofá vira e vê)
+    holograma: { x: -0.8, y: 2.0, largura: 3.6, altura: 1.8 },
+} as const;
+
+// do espaço da sala pro andar
+function noMundo(sala: Ponto & { rot: number }, lx: number, lz: number): Ponto {
+    return doMovel(sala, lx, lz);
+}
+
+// sala gamer: TV na parede de fora, rack e torres embaixo, mesa hexagonal no meio,
+// sofá em V atrás dela, puffs, fliperama e prateleiras. A porta fica num canto (o sofá ocupa o meio)
+function salaComum(base: BaseSala, zLonge: number, zPerto: number, solidos: Solido[]): SalaPlanta {
+    const { lado, canalId } = base;
     const zc = (zPerto + zLonge) / 2;
     const xc = lado * (CORREDOR + LARGURA) / 2;
-    const xFora = lado * LARGURA;
-    const xMovel = xc + lado * 0.2;
-
-    const sofas: Movel[] = [
-        { tipo: "sofa", x: xMovel, z: zc - 3.0, rot: 0, cor },
-        { tipo: "sofa", x: xMovel, z: zc + 3.0, rot: Math.PI, cor },
-    ];
-    moveis.push(
-        { tipo: "tapete", x: xc, z: zc, rot: 0, cor, raio: 2.6 },
-        { tipo: "mesa", x: xc, z: zc, rot: 0 },
-        ...sofas,
-        { tipo: "planta", x: xFora - lado * 0.7, z: zc - 3.3, rot: 0 },
-        { tipo: "planta", x: xFora - lado * 0.7, z: zc + 3.3, rot: 0 },
-        { tipo: "planta", x: lado * (CORREDOR + 0.6), z: zc + 3.3, rot: 0 },
-    );
-
-    // lugares em pé em volta da mesa, olhando pro centro, começando pelo lado da TV
-    // (de frente pra quem entra). Passou de 8 pessoas, abre uma roda maior
-    const lugares = Array.from({ length: 16 }, (_, n) => {
-        const roda = n < 8 ? 0 : 1;
-        const k = n % 8;
-        const angulo = (lado > 0 ? 0 : Math.PI) + roda * (Math.PI / 9) + (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 4.5);
-        const raio = roda === 0 ? 1.7 : 2.5;
-        const x = xc + Math.cos(angulo) * raio;
-        const z = zc + Math.sin(angulo) * raio;
-        // rot de quem olha de (x, z) para o centro
-        return { x, z, rot: Math.atan2(x - xc, z - zc) };
-    });
-
-    // os dois sofás intercalados: o meio de cada um primeiro, depois as pontas
-    const [a, b] = sofas.map((m, i) => assentosDoSofa(m, canalId, `${canalId}:${i}`));
-    const assentos = [0, 1, 2].flatMap((i) => [a[i], b[i]]);
-
-    // surround: torres dos lados da TV, barra embaixo dela e duas caixas na parede do corredor.
-    // Quem olha pra TV olha pra +lado (em x); a direita dessa pessoa fica em +lado (em z)
-    const xTv = xFora - lado * (e + 0.26);
     const virada = -lado * Math.PI / 2; // de frente pra sala, como a TV
-    const caixasSom: CaixaSom[] = [
-        { x: xTv - lado * 0.8, y: 1.0, z: zc - lado * 2.2, tipo: "torre", rot: virada },
-        { x: xTv + Math.sin(virada) * 0.08, y: 0.45, z: zc + Math.cos(virada) * 0.08, tipo: "barra", rot: virada },
-        { x: xTv - lado * 0.8, y: 1.0, z: zc + lado * 2.2, tipo: "torre", rot: virada },
-        { x: lado * (CORREDOR + 0.7), y: 2.35, z: zc - lado * 3.6, tipo: "parede", rot: lado * Math.PI / 2 },
-        { x: lado * (CORREDOR + 0.7), y: 2.35, z: zc + lado * 3.6, tipo: "parede", rot: lado * Math.PI / 2 },
+    const sala = { x: xc, z: zc, rot: virada };
+    const g = GAMER;
+    const p = (lx: number, lz: number) => noMundo(sala, lx, lz);
+
+    // assentos: três por asa do sofá (do braço pro vértice) e os dois puffs
+    const assentosAsa = g.asas.map((a, i) =>
+        [0.62, -0.08, -0.78].map((f, k): Assento => {
+            const local = doMovel({ x: a.x, z: a.z, rot: a.giro }, f * a.fora, -0.08);
+            return { ...p(local.x, local.z), id: `${canalId}:${i}:${k}`, salaId: canalId, y: 0, rot: a.giro + virada };
+        }),
+    );
+    const assentos: Assento[] = [
+        // as duas asas intercaladas: o meio de cada uma primeiro, depois as pontas
+        ...[1, 0, 2].flatMap((k) => [assentosAsa[0][k], assentosAsa[1][k]]),
+        ...g.puffs.map((pf, i): Assento => ({ ...p(pf.x + 0.12, pf.z - 0.05), id: `${canalId}:puff:${i}`, salaId: canalId, y: 0, rot: -0.35 + virada })),
     ];
-    moveis.push(
-        { tipo: "torre", x: caixasSom[0].x, z: caixasSom[0].z, rot: virada },
-        { tipo: "torre", x: caixasSom[2].x, z: caixasSom[2].z, rot: virada },
+
+    // lugares em pé em volta da mesa, do lado da TV (atrás dela fica o sofá). Passou de 7, abre uma roda maior
+    const roda = (raio: number, graus: number[]) => graus.map((d) => {
+        const a = (d * Math.PI) / 180;
+        return { x: g.mesa.x + Math.sin(a) * raio, z: g.mesa.z - Math.cos(a) * raio };
+    });
+    const lugares = [
+        ...roda(1.3, [0, -40, 40, -80, 80, -115, 115]),
+        ...roda(2.1, [0, -20, 20, -55, 55, -90, 90]),
+        { x: -1.0, z: -2.5 },
+        { x: 1.0, z: -2.5 },
+    ].map((l) => ({ ...p(l.x, l.z), rot: Math.atan2(l.x - g.mesa.x, l.z - g.mesa.z) + virada }));
+
+    // os móveis como sólidos, peça por peça, com as medidas do desenho (SalaGamer.tsx)
+    const ref: Referencia = sala;
+    const L = g.comprimentoAsa / 2;
+    solidos.push(
+        // sofá em V: em cada asa (frente pra -z), assento com almofadas, encosto e o braço de fora
+        ...g.asas.flatMap((a) => {
+            const asa = compor(ref, a.x, a.z, a.giro);
+            return [
+                caixa(asa, L, 0.475, 0.56),
+                caixa(compor(asa, 0, 0.4), L, 0.12, 0.97),
+                caixa(compor(asa, a.fora * (L - 0.1), 0), 0.12, 0.475, 0.72),
+            ];
+        }),
+        // mesas sextavadas (mesa de centro e a do vértice do sofá)
+        cilindro(p(g.mesa.x, g.mesa.z), 0.56, 0.465),
+        cilindro(p(g.mesinha.x, g.mesinha.z), g.mesinha.raio, 0.5),
+        caixa(compor(ref, 0, g.rack.z), g.rack.largura / 2, 0.24, 0.48),
+        ...g.torres.map((t) => caixa(compor(ref, t.x, t.z), 0.18, 0.18, 1.12)),
+        // puffs: a bola achatada e o encosto atrás
+        ...g.puffs.flatMap((pf) => [
+            cilindro(p(pf.x, pf.z), 0.52, 0.6),
+            cilindro(p(pf.x + Math.sin(pf.giro) * 0.25, pf.z + Math.cos(pf.giro) * 0.25), 0.32, 0.87, 0.3),
+        ]),
+        // fliperama: o gabinete e o painel dos botões, que avança pra frente
+        ...(() => {
+            const f = compor(ref, g.fliperama.x, g.fliperama.z, g.fliperama.giro);
+            return [caixa(f, 0.36, 0.3, 1.8), caixa(compor(f, 0, 0.42), 0.36, 0.13, 1.0, 0.85)];
+        })(),
+        // vaso e a copa da planta
+        cilindro(p(g.vaso.x, g.vaso.z), 0.24, 0.45),
+        cilindro(p(g.vaso.x, g.vaso.z), 0.4, 1.7, 0.58),
+        // prateleiras na parede (dá pra passar agachado embaixo da de baixo)
+        ...[1.55, 2.15].map((y) => caixa(compor(ref, g.meia - 0.16, g.prateleira.z), 0.15, g.prateleira.comprimento / 2, y + 0.02, y - 0.02)),
     );
 
+    // surround: torres dos lados da TV, soundbar em cima do rack e duas caixas nas paredes do fundo.
+    // Quem olha pra TV olha pra -z da sala; a direita dessa pessoa é +x
+    const torre = (i: number): CaixaSom => ({ ...p(g.torres[i].x, g.torres[i].z), y: 1.0, tipo: "torre", rot: virada });
+    // traseiras um pouco atrás do sofá e não muito acima de quem está sentado (orelha em ~1,1 m)
+    const naParede = (s: -1 | 1): CaixaSom => ({ ...p(s * (g.meia - 0.12), 3.0), y: 2.0, tipo: "parede", rot: -s * Math.PI / 2 + virada });
+    const caixasSom: CaixaSom[] = [
+        torre(0),
+        { ...p(0, g.rack.z - 0.08), y: 0.535, tipo: "barra", rot: virada },
+        torre(1),
+        naParede(-1),
+        naParede(1),
+    ];
+
+    const tv = p(0, g.tvZ);
+    const porta = p(g.portaX, g.meia + e);
     return {
         ...base,
         modelo: "PADRAO",
         centro: { x: xc, z: zc },
-        porta: { x: lado * CORREDOR, z: zc },
-        tv: { x: xTv, z: zc, rot: virada, y: 1.75, largura: 4.0 },
+        // a porta fica exatamente na parede do corredor
+        porta: { x: lado * CORREDOR, z: porta.z },
+        tv: { ...tv, rot: virada, y: 1.75, largura: 4.0 },
         assentos,
         caixasSom,
-        tablet: { x: xc, y: 0.49, z: zc, rot: virada, inclinacao: -Math.PI / 2 },
+        // deitado no tampo da mesa hexagonal (topo em 0,465)
+        tablet: { ...p(g.mesa.x, g.mesa.z), y: 0.473, rot: virada, inclinacao: -Math.PI / 2 },
         lugares,
+        // a tela do holograma fica 14 cm à frente da parede da porta, virada pra dentro da sala (-z)
+        chat: {
+            ...p(g.holograma.x, g.meia - 0.14),
+            y: g.holograma.y,
+            ...(() => {
+                const c = Math.cos(virada);
+                const sn = Math.sin(virada);
+                // direções do espaço da sala pro andar: -z (normal) e +x (largura)
+                return { nx: -sn, nz: -c, ux: c, uz: -sn };
+            })(),
+            largura: g.holograma.largura,
+            altura: g.holograma.altura,
+        },
     };
 }
 
 // cinema: telão na parede do fundo (zLonge), porta perto dele, e fileiras de poltronas
 // em degraus subindo até o fundo. O corredor lateral (do lado da porta) vira escada
-function salaCinema(base: BaseSala, zLonge: number, zPerto: number, moveis: Movel[], degraus: Degrau[], colisao: Ret[]): SalaPlanta {
+function salaCinema(base: BaseSala, zLonge: number, zPerto: number, moveis: Movel[], degraus: Degrau[], solidos: Solido[]): SalaPlanta {
     const { lado, canalId, ret } = base;
     const xc = lado * (CORREDOR + LARGURA) / 2;
     const zFilas = zLonge + 5; // começo dos degraus: 5 m de chão livre na frente do telão
@@ -427,12 +516,12 @@ function salaCinema(base: BaseSala, zLonge: number, zPerto: number, moveis: Move
         const zPoltrona = z1 + 1.3;
         for (let k = 0; k < POLTRONAS_POR_FILA; k++) {
             const x = lado * (CORREDOR + 1.6 + k * 0.72);
-            moveis.push({ tipo: "poltrona", x, z: zPoltrona, rot: Math.PI, y: topo, cor: "#7a1f24" });
+            moveis.push({ tipo: "poltrona", x, z: zPoltrona, rot: Math.PI, y: topo, cor: "#2a2a33" });
             assentos.push({ id: `${canalId}:${fila}:${k}`, salaId: canalId, x, z: zPoltrona, y: topo, rot: 0 });
         }
         // a fileira bloqueia inteira; entra-se pelo espaço das pernas, vindo do corredor lateral
         const xs = [lado * (CORREDOR + 1.25), lado * (CORREDOR + 1.6 + (POLTRONAS_POR_FILA - 1) * 0.72 + 0.4)];
-        colisao.push({ x1: Math.min(...xs), x2: Math.max(...xs), z1: zPoltrona - 0.32, z2: zPoltrona + 0.38 });
+        solidos.push(solidoDeRet({ x1: Math.min(...xs), x2: Math.max(...xs), z1: zPoltrona - 0.32, z2: zPoltrona + 0.38 }, topo, topo + 1.15));
     }
 
     // ordem de ocupação de quem está pelo modo clássico: fileiras do meio e poltronas do centro primeiro
@@ -466,6 +555,7 @@ function salaCinema(base: BaseSala, zLonge: number, zPerto: number, moveis: Move
         centro: { x: xc, z: (zLonge + zPerto) / 2 },
         porta: { x: lado * CORREDOR, z: zLonge + 2.2 },
         tv: { x: xc, z: zLonge + e + 0.06, rot: 0, y: 2.75, largura: 7.1 },
+        chat: null,
         assentos,
         // não coube nas 45 poltronas: em pé na frente do telão
         lugares: Array.from({ length: 12 }, (_, n) => ({ x: xc + (n % 6 - 2.5) * 1.1, z: zLonge + 2.8 + Math.floor(n / 6) * 1.1, rot: 0 })),
@@ -475,26 +565,4 @@ function salaCinema(base: BaseSala, zLonge: number, zPerto: number, moveis: Move
 // onde a pessoa aparece ao abrir o 3D já numa call deste andar: logo depois da porta da sala
 export function nascerNaSala(sala: SalaPlanta): Ponto & { rot: number } {
     return { x: sala.porta.x + sala.lado * 1.4, z: sala.porta.z, rot: -sala.lado * Math.PI / 2 };
-}
-
-// empurra um círculo (o jogador) pra fora das caixas. Um eixo de cada vez pra deslizar nas paredes.
-// podePisar: chão alto demais (degrau acima do que dá pra subir) também bloqueia
-export function moverComColisao(de: Ponto, para: Ponto, caixas: Ret[], raio = RAIO_JOGADOR, podePisar?: (p: Ponto) => boolean): Ponto {
-    const bate = (x: number, z: number) =>
-        caixas.some((c) => x > c.x1 - raio && x < c.x2 + raio && z > c.z1 - raio && z < c.z2 + raio) ||
-        (podePisar !== undefined && !podePisar({ x, z }));
-
-    // já estava dentro de algo (ex.: levantou num lugar apertado): deixa sair
-    if (bate(de.x, de.z)) return para;
-
-    let x = de.x;
-    let z = de.z;
-    if (!bate(para.x, z)) x = para.x;
-    if (!bate(x, para.z)) z = para.z;
-    return { x, z };
-}
-
-// cabe um jogador em pé aqui?
-export function pontoLivre(caixas: Ret[], p: Ponto, raio = RAIO_JOGADOR) {
-    return !caixas.some((c) => p.x > c.x1 - raio && p.x < c.x2 + raio && p.z > c.z1 - raio && p.z < c.z2 + raio);
 }

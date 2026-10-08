@@ -10,7 +10,8 @@ import type { Usuario } from "../../api";
 import { hash } from "../../lib/util";
 import { useTexturaAvatar, useTexturaVideo } from "./midia";
 import { caixaArredondada, material, tom } from "./Moveis";
-import { alturaChao, type Degrau, type Ponto } from "./planta";
+import { alturaChao, type Solido } from "./colisao";
+import type { Ponto } from "./planta";
 import { ITEM, POSTURA, type Pose } from "./rede";
 import { texturaCracha, texturaSombra, texturaTexto } from "./texturas";
 
@@ -71,11 +72,11 @@ type Props = {
     telas: Track[];
     // posição atual de cada boneco, pro áudio espacial saber de onde vem a voz
     posicoes: Map<string, Ponto>;
-    // degraus do cinema: a sombra fica no chão de verdade (não sobe junto no pulo)
-    degraus: Degrau[];
+    // o chão de verdade (degraus, móveis): a sombra fica nele (não sobe junto no pulo)
+    solidos: Solido[];
 };
 
-export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes, degraus }: Props) {
+export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes, solidos }: Props) {
     const raiz = useRef<THREE.Group>(null);
     const corpo = useRef<THREE.Group>(null);
     const tronco = useRef<THREE.Group>(null);
@@ -156,7 +157,7 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
         raiz.current.position.set(e.x, e.y, e.z);
         // sombra no chão, menor quanto mais alto no pulo
         if (sombra.current) {
-            const altura = Math.max(0, e.y - alturaChao(degraus, e));
+            const altura = Math.max(0, e.y - alturaChao(solidos, e, e.y));
             sombra.current.position.y = 0.011 - altura;
             sombra.current.scale.setScalar(0.9 * (1 - Math.min(0.5, altura * 0.45)));
         }

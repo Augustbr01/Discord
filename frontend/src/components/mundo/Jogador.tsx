@@ -5,13 +5,14 @@
 // A movimentação é a da Source/CS: aceleração e atrito no chão, controle no ar (air strafe)
 // e bunny hop — pular no tick em que encosta no chão não perde velocidade pro atrito.
 // A física roda em ticks fixos de 64 por segundo (como o CS2) e a câmera interpola entre eles.
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type * as THREE from "three";
 import { estaDigitando } from "../../lib/util";
 import { fovVertical, lerConfig, radianosPorPonto } from "./config";
+import { ALTURA_AGACHADO, ALTURA_CORPO, alturaChao, mover, pontoLivre, solidoDeRet, DEGRAU_MAXIMO } from "./colisao";
 import {
-    alturaChao, dentro, moverComColisao, pontoLivre, ALTURA, ALTURA_ELEVADOR, ALTURA_HALL, DEGRAU_MAXIMO, RAIO_JOGADOR,
+    dentro, ALTURA, ALTURA_ELEVADOR, ALTURA_HALL,
     type Assento, type Interativo, type Planta, type Ponto,
 } from "./planta";
 import { POSTURA, type Pose } from "./rede";
@@ -168,7 +169,9 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         if (document.pointerLockElement === gl.domElement) document.exitPointerLock();
     }, [parado, gl]);
 
-    const caixas = () => (portaFechada.current ? [...planta.colisao, planta.portaElevador] : planta.colisao);
+    // a porta do elevador fechada também é parede
+    const portaElevador = useMemo(() => solidoDeRet(planta.portaElevador, 0, ALTURA_ELEVADOR), [planta]);
+    const solidos = () => (portaFechada.current ? [...planta.solidos, portaElevador] : planta.solidos);
 
     // altura do teto onde você está (pra não atravessar com o pulo)
     function teto(p: Ponto) {
@@ -188,10 +191,10 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const fx = -Math.sin(a.rot);
         const fz = -Math.cos(a.rot);
         const tentativas: Ponto[] = [0.8, 1.1, 1.4].map((d) => ({ x: a.x + fx * d, z: a.z + fz * d }));
-        const alvo = tentativas.find((q) => pontoLivre(caixas(), q)) ?? tentativas[0];
+        const alvo = tentativas.find((q) => pontoLivre(solidos(), q, a.y)) ?? tentativas[0]!;
         p.x = alvo.x;
         p.z = alvo.z;
-        p.y = alturaChao(planta.degraus, alvo);
+        p.y = alturaChao(solidos(), alvo, a.y);
         f.antes = { x: p.x, y: p.y, z: p.z };
         f.assento = null;
         f.vx = f.vz = f.vy = 0;
@@ -257,15 +260,9 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         if (f.noChao) acelerar(dirX, dirZ, desejada, ACELERACAO, Infinity, dt);
         else acelerar(dirX, dirZ, desejada, ACELERACAO_AR, MAXIMO_AR, dt);
 
-        // andar com colisão: degrau alto demais conta como parede
-        const pes = p.y;
-        const novo = moverComColisao(
-            p,
-            { x: p.x + f.vx * dt, z: p.z + f.vz * dt },
-            caixas(),
-            RAIO_JOGADOR,
-            (q) => alturaChao(planta.degraus, q) - pes <= DEGRAU_MAXIMO,
-        );
+        // andar com colisão: o que fica acima do degrau que dá pra subir (e abaixo da cabeça) é parede
+        const lista = solidos();
+        const novo = mover(p, { x: p.x + f.vx * dt, z: p.z + f.vz * dt }, lista, p.y, p.y + (agachar ? ALTURA_AGACHADO : ALTURA_CORPO));
         // bateu: a velocidade fica só no que deu pra andar (desliza na parede, não acumula)
         const realX = (novo.x - p.x) / dt;
         const realZ = (novo.z - p.z) / dt;
@@ -275,7 +272,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         p.z = novo.z;
 
         // chão, gravidade e teto
-        const chao = alturaChao(planta.degraus, p);
+        const chao = alturaChao(lista, p, p.y);
         if (f.noChao) {
             // desce degrau pequeno colado no chão; mais alto que isso, cai
             if (p.y - chao > DEGRAU_MAXIMO) {
@@ -402,7 +399,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         }
 
         atualizarSala(p);
-        atualizarFoco(p, olhar.current.yaw, !!f.assento);
+        atualizarFoco(p, olhar.current.yaw, olhar.current.pitch, f.cameraY, !!f.assento);
     });
 
     function atualizarSala(p: Ponto) {
@@ -415,10 +412,37 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         onSala(nova);
     }
 
-    function atualizarFoco(p: Ponto, yaw: number, sentado: boolean) {
+    // a mira (o centro da tela) acerta a tela do holograma do chat desta sala?
+    function miraNoChat(it: Interativo, p: Ponto, yaw: number, pitch: number, olhosY: number) {
+        const h = planta.salas.find((s) => s.canalId === it.canalId)?.chat;
+        if (!h) return false;
+        // direção da câmera
+        const dx = -Math.sin(yaw) * Math.cos(pitch);
+        const dy = Math.sin(pitch);
+        const dz = -Math.cos(yaw) * Math.cos(pitch);
+        // olhando pra frente da tela?
+        const deFrente = dx * h.nx + dz * h.nz;
+        if (deFrente >= -0.05) return false;
+        // onde o raio da mira encontra o plano da tela
+        const t = ((h.x - p.x) * h.nx + (h.z - p.z) * h.nz) / deFrente;
+        if (t <= 0 || t > it.raio) return false;
+        const u = (p.x + dx * t - h.x) * h.ux + (p.z + dz * t - h.z) * h.uz;
+        const v = olhosY + dy * t - h.y;
+        return Math.abs(u) <= h.largura / 2 && Math.abs(v) <= h.altura / 2;
+    }
+
+    function atualizarFoco(p: Ponto, yaw: number, pitch: number, olhosY: number, sentado: boolean) {
         let melhor: Interativo | null = null;
         let menor = Infinity;
         for (const it of planta.interativos) {
+            // holograma do chat: só com a mira em cima dele, e aí ganha dos outros (foi de propósito)
+            if (it.tipo === "chat") {
+                if (miraNoChat(it, p, yaw, pitch, olhosY)) {
+                    melhor = it;
+                    break;
+                }
+                continue;
+            }
             // sentado, os outros lugares não interessam (levanta com Espaço)
             if (sentado && it.tipo === "assento") continue;
             const d = Math.hypot(it.x - p.x, it.z - p.z);

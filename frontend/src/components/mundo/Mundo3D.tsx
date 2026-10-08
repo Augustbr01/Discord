@@ -6,6 +6,7 @@ import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Settings, Tablet,
 import { VideoTrack, useConnectionState, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
+import { useChatSala } from "../../contexto/ChatSala";
 import { fonteDaTV, useControleSala } from "../../contexto/ControleSala";
 import { useControleVoz } from "../../contexto/ControleVoz";
 import { useYoutubeSala } from "../../contexto/YoutubeSala";
@@ -13,6 +14,7 @@ import { pessoasNaSala } from "../../lib/salas";
 import { estaDigitando } from "../../lib/util";
 import type { MapaMembros, Voz } from "../../tipos";
 import { CanalTexto } from "../CanalTexto";
+import { ChatAoVivo } from "../chamada/ChatAoVivo";
 import { Controles } from "../chamada/Controles";
 import { IconeServidor } from "../ui/Avatar";
 import { PainelControle } from "../controle/PainelControle";
@@ -21,6 +23,7 @@ import { useConfigMundo } from "./config";
 import { ConfigMundo, Velocimetro } from "./ConfigMundo";
 import { CanvasMundo, Cena, criarTunel, type Pessoa, type Tunel } from "./Cena";
 import type { YoutubeNaTV } from "./Predio";
+import type { LinhaChat } from "./Holograma";
 import type { ControleToque, PedidoJogador } from "./Jogador";
 import { dentro, gerarPlanta, nascerNaSala, type Interativo, type Ponto } from "./planta";
 import { ITEM, POSTURA, useJogadoresDoAndar, type Pose } from "./rede";
@@ -151,6 +154,9 @@ function Andar({
     const portaFechada = useRef(!portaAberta);
     const [seletorAberto, setSeletorAberto] = useState(false);
     const [chatId, setChatId] = useState<string | null>(null);
+    // o chat da call (aberto pelo holograma da sala)
+    const [chatCallAberto, setChatCallAberto] = useState(false);
+    const chatSala = useChatSala();
     // o controle da sala (tablet), aberto na aba Controle ou YouTube. Aberto = tablet na mão
     // (os outros veem o seu boneco segurando)
     const [controleAberto, setControleAberto] = useState<"controle" | "youtube" | null>(null);
@@ -327,9 +333,11 @@ function Andar({
     volumeControle.current = controle.estado?.volume ?? 100;
     useEffect(() => {
         if (!salaDaCall) return;
+        // na sala gamer o sofá fica a ~5,5 m da TV: só começa a cair depois de 4,5 m
+        const cheio = salaDaCall.modelo === "CINEMA" ? 2.5 : 4.5;
         const t = window.setInterval(() => {
             const d = Math.hypot(pose.current.x - salaDaCall.tv.x, pose.current.z - salaDaCall.tv.z);
-            volumeTV.current = Math.max(25, Math.min(100, 100 - (d - 2.5) * 9)) * (volumeControle.current / 100);
+            volumeTV.current = Math.max(25, Math.min(100, 100 - (d - cheio) * 9)) * (volumeControle.current / 100);
         }, 300);
         return () => window.clearInterval(t);
     }, [salaDaCall]);
@@ -346,7 +354,9 @@ function Andar({
               tela: { x: salaDaCall.tv.x, y: salaDaCall.tv.y, z: salaDaCall.tv.z },
               surround: controle.estado.surround,
               volume: controle.estado.volume,
-              alcance: salaDaCall.modelo === "CINEMA" ? 5 : 2.6,
+              // até onde as caixas soam cheias: o sofá da sala gamer fica a ~5,5 m das torres
+              alcance: salaDaCall.modelo === "CINEMA" ? 5 : 4.5,
+              reverb: salaDaCall.modelo === "CINEMA" ? 1.2 : 0.8,
           }
         : null;
 
@@ -358,6 +368,17 @@ function Andar({
     const naSalaDaCall = !!salaDaCall && salaAtual === salaDaCall.canalId;
     const escuro = naSalaDaCall && (luzes === "APAGADAS" || (luzes === "AUTO" && !!cinema && filmeRolando));
 
+    // chat da call no holograma da sala: com o nome de cada um como na lista de membros
+    const chatHolograma = useMemo<LinhaChat[]>(
+        () => chatSala.mensagens.slice(-30).map((m) => ({
+            id: m.id,
+            nome: m.from?.isLocal ? eu.nome : membros.get(m.from?.identity ?? "")?.nome ?? m.from?.name ?? "Convidado",
+            texto: m.message,
+            local: !!m.from?.isLocal,
+        })),
+        [chatSala.mensagens, eu.nome, membros],
+    );
+
     // ---------- teclas E e F ----------
 
     const noCanal = salaAtual ? canais.get(salaAtual) : undefined;
@@ -366,6 +387,7 @@ function Andar({
         : foco?.tipo === "texto" ? { tecla: "E", texto: `Abrir #${canais.get(foco.canalId ?? "")?.nome ?? ""}` }
         : (foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar
             ? { tecla: "E", texto: "Controle da sala" }
+        : foco?.tipo === "chat" && foco.canalId === vozNoAndar ? { tecla: "E", texto: "Escrever no chat da call" }
         : foco?.tipo === "assento"
             ? ocupados.has(foco.assentoId ?? "") ? { texto: "Lugar ocupado" } : { tecla: "E", texto: "Sentar" }
         : conectando ? { texto: tentandoDeNovo ? "Sem conexão com a call · tentando de novo…" : "Conectando à call…", carregando: true }
@@ -385,10 +407,17 @@ function Andar({
         } else if (foco?.tipo === "texto" && foco.canalId) {
             soltarMouse();
             setControleAberto(null);
+            setChatCallAberto(false);
             setChatId(foco.canalId);
+        } else if (foco?.tipo === "chat" && foco.canalId === vozNoAndar) {
+            soltarMouse();
+            setControleAberto(null);
+            setChatId(null);
+            setChatCallAberto(true);
         } else if ((foco?.tipo === "tv" || foco?.tipo === "tablet") && foco.canalId === vozNoAndar) {
             soltarMouse();
             setChatId(null);
+            setChatCallAberto(false);
             setControleAberto("controle");
         } else if (foco?.tipo === "assento") {
             const assento = assentosPorId.get(foco.assentoId ?? "");
@@ -405,6 +434,7 @@ function Andar({
         }
         soltarMouse();
         setChatId(null);
+        setChatCallAberto(false);
         setControleAberto("controle");
     };
     acoes.current.f = () => {
@@ -416,6 +446,23 @@ function Andar({
 
     useEffect(() => {
         const aoTeclar = (e: KeyboardEvent) => {
+            // Esc fecha qualquer painel aberto (chat de texto, chat da call, tablet, configurações,
+            // elevador, tela cheia) — inclusive digitando, porque os painéis abrem com o cursor
+            // na caixa de texto
+            if (e.code === "Escape") {
+                // o Esc já foi usado lá dentro (ex.: cancelar a edição de uma mensagem)
+                if (e.defaultPrevented) return;
+                // o navegador não deixa o Esc travar o mouse de novo: depois dele, é só começar a
+                // andar (W A S D) ou clicar que volta pro jogo (ver Jogador)
+                setSeletorAberto(false);
+                setTelaCheia(false);
+                setControleAberto(null);
+                setChatCallAberto(false);
+                setChatId(null);
+                setConfigAberta(false);
+                if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+                return;
+            }
             if (estaDigitando(e) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
             // preventDefault: o painel que abre foca um campo de texto, e sem isso a própria
             // tecla ("e") seria digitada nele
@@ -434,12 +481,6 @@ function Andar({
             if (e.code === "KeyO") {
                 e.preventDefault();
                 setConfigAberta((v) => !v);
-            }
-            if (e.code === "Escape") {
-                setSeletorAberto(false);
-                setTelaCheia(false);
-                setControleAberto(null);
-                setConfigAberta(false);
             }
         };
         window.addEventListener("keydown", aoTeclar);
@@ -488,6 +529,9 @@ function Andar({
                     proximidade={!!voz?.hall}
                     surdo={surdo}
                     escuro={escuro}
+                    led={controle.estado?.led ?? null}
+                    salaAtual={salaAtual}
+                    chat={chatHolograma}
                     telao={naSalaDaCall && salaDaCall ? { x: salaDaCall.tv.x, y: salaDaCall.tv.y, z: salaDaCall.tv.z, rot: salaDaCall.tv.rot } : null}
                 somTV={somTV}
                     onPostura={setPostura}
@@ -514,7 +558,7 @@ function Andar({
                     <Settings size={18} />
                 </button>
 
-                {!travado && !toqueAtivo && !parado && !canalChat && !controleAberto && (
+                {!travado && !toqueAtivo && !parado && !canalChat && !chatCallAberto && !controleAberto && (
                     <div className="mundo-ajuda">
                         <strong>Clique para andar</strong>
                         <span>
@@ -590,6 +634,13 @@ function Andar({
                         <X size={18} />
                     </button>
                 </aside>
+            )}
+
+            {/* chat da call, aberto pelo holograma da sala (só dá pra abrir estando na call dela) */}
+            {chatCallAberto && salaDaCall && (
+                <div className="mundo-chat mundo-chat-call">
+                    <ChatAoVivo membros={membros} eu={eu} onFechar={() => setChatCallAberto(false)} />
+                </div>
             )}
 
             {/* o painel só vale dentro da call da sala (é quem pode controlar) */}
