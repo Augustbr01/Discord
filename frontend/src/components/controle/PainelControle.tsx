@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { VideoTrack, type TrackReference } from "@livekit/components-react";
-import { Lightbulb, LightbulbOff, MonitorUp, PowerOff, Sparkles, SunDim, Tv, TvMinimalPlay, Volume1, Volume2, X } from "lucide-react";
+import { LayoutGrid, Lightbulb, LightbulbOff, MonitorUp, PowerOff, Sparkles, SunDim, Tv, TvMinimalPlay, Volume1, Volume2, X } from "lucide-react";
 import type { Usuario } from "../../api";
 import { useControleSala } from "../../contexto/ControleSala";
 import { useYoutubeSala } from "../../contexto/YoutubeSala";
@@ -184,6 +184,15 @@ function SecaoTV({ estado, enviar, telas, nome, grade = false }: SecaoTVProps) {
                     icone={<TvMinimalPlay size={grade ? 26 : 18} />}
                     titulo="YouTube junto"
                     descricao={video?.titulo ?? "Nada tocando (coloque um vídeo na aba YouTube)"}
+                />
+                <Opcao
+                    cartao={grade}
+                    ativo={tv.modo === "MOSAICO"}
+                    desligada={telas.length < 2}
+                    onClick={() => enviar({ acao: "TV", modo: "MOSAICO" })}
+                    icone={<LayoutGrid size={grade ? 26 : 18} />}
+                    titulo="Mosaico"
+                    descricao={telas.length < 2 ? "Todas as telas juntas (precisa de 2 ou mais)" : `As ${telas.length} telas compartilhadas ao mesmo tempo`}
                 />
                 {/* cada tela compartilhada, com a prévia ao vivo: toque pra mandar pra TV da sala */}
                 {telas.map((t) => (

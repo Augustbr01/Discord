@@ -36,7 +36,7 @@ export type EstadoYoutube = {
 }
 
 // controle da sala (o "tablet"): o que aparece na TV, volume e surround da TV, e as luzes
-export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "DESLIGADA"
+export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "MOSAICO" | "DESLIGADA"
 export type ModoLuzes = "AUTO" | "ACESAS" | "APAGADAS"
 // LEDs da sala gamer. paleta null = a cor padrão da sala (cada sala tem a sua)
 export type PaletaLed = "NEON" | "BRASA" | "AURORA" | "SAKURA" | "MONO"

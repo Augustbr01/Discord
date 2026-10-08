@@ -223,12 +223,17 @@ export type YoutubeNaTV = {
 // tamanho do player em px: o drei converte px em metros por distanceFactor / 400
 const PX_YOUTUBE = 1280;
 
-// TV da sala (ou o telão do cinema): o YouTube junto ou a tela compartilhada da call em que
-// você está, ou o nome da sala
+const SEM_TELAS: TelaNaTV[] = [];
+
+// uma tela compartilhada que vai pra TV, com o nome de quem compartilha (aparece no mosaico)
+export type TelaNaTV = { track: Track; nome: string };
+
+// TV da sala (ou o telão do cinema): o YouTube junto, a tela compartilhada da call em que
+// você está (ou várias, em mosaico), ou o nome da sala
 // destaque: a cor B dos LEDs da sala (o "CINEMA" do telão)
-function TV({ sala, nome, tela, youtube, destaque }: { sala: SalaPlanta; nome: string; tela: Track | undefined; youtube: YoutubeNaTV | undefined; destaque: string }) {
+function TV({ sala, nome, telas, youtube, destaque }: { sala: SalaPlanta; nome: string; telas: TelaNaTV[]; youtube: YoutubeNaTV | undefined; destaque: string }) {
     const cinema = sala.modelo === "CINEMA";
-    const video = useTexturaVideo(tela, cinema ? 1920 : 1280, cinema ? 1080 : 720);
+    const video = useTexturaVideo(telas.length === 1 ? telas[0]!.track : undefined, cinema ? 1920 : 1280, cinema ? 1080 : 720);
     // onde o <Html> pendura o iframe: sem isso o drei troca de elemento quando o canvas
     // liga os eventos, recria a raiz React e o player some (a raiz velha apaga a nova)
     const gl = useThree((s) => s.gl);
@@ -262,6 +267,8 @@ function TV({ sala, nome, tela, youtube, destaque }: { sala: SalaPlanta; nome: s
                         />
                     </div>
                 </Html>
+            ) : telas.length > 1 ? (
+                <Mosaico telas={telas} largura={L} altura={A} pixels={cinema ? 1920 : 1280} />
             ) : video ? (
                 <mesh geometry={PLANO} position={[0, 0, 0.05]} scale={[vl, va, 1]}>
                     <meshBasicMaterial map={video.textura} toneMapped={false} />
@@ -276,6 +283,63 @@ function TV({ sala, nome, tela, youtube, destaque }: { sala: SalaPlanta; nome: s
                     opcoes={{ largura: 1024, altura: 576, fundo: cinema ? "#101013" : "#0f0f12" }}
                 />
             )}
+        </group>
+    );
+}
+
+// várias telas ao mesmo tempo na TV: grade quase quadrada (2 = lado a lado, 3-4 = 2×2, 5-6 = 3×2...),
+// com a última linha centralizada. pixels = largura do vídeo da TV inteira (cada tela pede a sua parte)
+function Mosaico({ telas, largura, altura, pixels }: { telas: TelaNaTV[]; largura: number; altura: number; pixels: number }) {
+    const n = telas.length;
+    const colunas = Math.ceil(Math.sqrt(n));
+    const linhas = Math.ceil(n / colunas);
+    const vao = largura * 0.008;
+    const cl = (largura - vao * (colunas + 1)) / colunas;
+    const ca = (altura - vao * (linhas + 1)) / linhas;
+    const px = Math.max(640, Math.round(pixels / colunas));
+    return (
+        <>
+            {telas.map((t, i) => {
+                const col = i % colunas;
+                const lin = Math.floor(i / colunas);
+                const naLinha = lin === linhas - 1 ? n - lin * colunas : colunas;
+                const x = -(naLinha * cl + (naLinha - 1) * vao) / 2 + cl / 2 + col * (cl + vao);
+                const y = altura / 2 - vao - ca / 2 - lin * (ca + vao);
+                return <CelulaMosaico key={t.track.sid ?? i} tela={t} x={x} y={y} largura={cl} altura={ca} pixels={px} />;
+            })}
+        </>
+    );
+}
+
+function CelulaMosaico({ tela, x, y, largura, altura, pixels }: { tela: TelaNaTV; x: number; y: number; largura: number; altura: number; pixels: number }) {
+    const video = useTexturaVideo(tela.track, pixels, Math.round((pixels * 9) / 16));
+    // o nome de quem compartilha, no canto de baixo da tela
+    const etiqueta = useMemo(
+        () => texturaTexto([{ texto: tela.nome, tamanho: 34, peso: 600 }], { largura: Math.max(180, tela.nome.length * 21 + 64), altura: 60, fundo: "rgba(10, 10, 12, 0.78)", raio: 14 }),
+        [tela.nome],
+    );
+    useEffect(() => () => etiqueta.textura.dispose(), [etiqueta]);
+    const [vl, va] = video ? (video.aspecto > largura / altura ? [largura, largura / video.aspecto] : [altura * video.aspecto, altura]) : [largura, altura];
+    const ea = altura * 0.1;
+    const el = ea * etiqueta.aspecto;
+    const margem = altura * 0.035;
+
+    return (
+        <group position={[x, y, 0.05]}>
+            {/* um mesh pra cada caso (key): se o React reaproveitasse o material, a cor do "carregando"
+                ficava nele e escurecia o vídeo (a textura é multiplicada pela cor) */}
+            {video ? (
+                <mesh key="video" geometry={PLANO} scale={[vl, va, 1]}>
+                    <meshBasicMaterial map={video.textura} toneMapped={false} />
+                </mesh>
+            ) : (
+                <mesh key="vazio" geometry={PLANO} scale={[largura, altura, 1]}>
+                    <meshBasicMaterial color="#0f0f12" />
+                </mesh>
+            )}
+            <mesh geometry={PLANO} position={[-largura / 2 + el / 2 + margem, -altura / 2 + ea / 2 + margem, 0.003]} scale={[el, ea, 1]}>
+                <meshBasicMaterial map={etiqueta.textura} transparent depthWrite={false} toneMapped={false} />
+            </mesh>
         </group>
     );
 }
@@ -398,7 +462,7 @@ type Props = {
     pessoasPorSala: Map<string, number>;
     // sala da call em que você está (se for deste andar) e as telas que aparecem na TV dela
     salaDaCall: string | null;
-    telaDaSala: Track | undefined;
+    telasDaSala: TelaNaTV[];
     youtube: YoutubeNaTV | undefined;
     // sala com a luz apagada agora (o anel do teto dela também apaga)
     salaEscura: string | null;
@@ -410,7 +474,7 @@ type Props = {
     chat: LinhaChat[];
 };
 
-export function Predio({ planta, servidor, andar, pessoasPorSala, salaDaCall, telaDaSala, youtube, salaEscura, led, salaAtual, chat }: Props) {
+export function Predio({ planta, servidor, andar, pessoasPorSala, salaDaCall, telasDaSala, youtube, salaEscura, led, salaAtual, chat }: Props) {
     const { hall, corredor, elevador, salas, quadros } = planta;
     const H = hall.z2;
     const canais = useMemo(() => new Map<string, Canal>(servidor.canais.map((c) => [c.id, c])), [servidor.canais]);
@@ -617,7 +681,7 @@ export function Predio({ planta, servidor, andar, pessoasPorSala, salaDaCall, te
                         <TV
                             sala={s}
                             nome={nome}
-                            tela={s.canalId === salaDaCall ? telaDaSala : undefined}
+                            telas={s.canalId === salaDaCall ? telasDaSala : SEM_TELAS}
                             youtube={s.canalId === salaDaCall ? youtube : undefined}
                             destaque={paleta.b}
                         />

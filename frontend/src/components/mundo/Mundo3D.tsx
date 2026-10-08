@@ -23,8 +23,8 @@ import type { SomDaTV } from "./AudioEspacial";
 import { useConfigMundo } from "./config";
 import { ConfigMundo, Velocimetro } from "./ConfigMundo";
 import { CanvasMundo, Cena, criarTunel, type Pessoa, type Tunel } from "./Cena";
-import type { YoutubeNaTV } from "./Predio";
 import type { LinhaChat } from "./Holograma";
+import type { TelaNaTV, YoutubeNaTV } from "./Predio";
 import type { ControleToque, PedidoJogador } from "./Jogador";
 import { dentro, gerarPlanta, nascerNaSala, type Interativo, type Ponto } from "./planta";
 import { ITEM, POSTURA, useJogadoresDoAndar, type Pose } from "./rede";
@@ -360,7 +360,9 @@ function Andar({
     // o que vai na TV da sala da sua call: o que escolheram no controle da sala (tablet)
     const fonte = fonteDaTV(controle.estado, youtube.estado, midia.telasDaCall);
     const salaDaCall = planta.salas.find((s) => s.canalId === vozNoAndar);
-    const telaDaSala = fonte.tipo === "tela" ? fonte.tela.publication.track : undefined;
+    // na TV: uma tela, ou todas em mosaico (com o nome de quem compartilha)
+    const telasDaSala: TelaNaTV[] = (fonte.tipo === "tela" ? [fonte.tela] : fonte.tipo === "mosaico" ? fonte.telas : []).flatMap((t) =>
+        t.publication.track ? [{ track: t.publication.track, nome: t.participant.isLocal ? "Você" : membros.get(t.participant.identity)?.nome ?? "Alguém" }] : []);
 
     // YouTube junto na TV: mais alto perto da TV, mais baixo no fundo da sala, vezes o volume do controle
     const volumeTV = useRef(100);
@@ -398,7 +400,7 @@ function Andar({
     // luz: no automático, o cinema apaga com filme rolando; o controle da sala pode forçar acesa/apagada.
     // Só vale dentro da sala da sua call (é dela que você tem o controle)
     const cinema = planta.salas.find((s) => s.canalId === salaAtual && s.modelo === "CINEMA");
-    const filmeRolando = (fonte.tipo === "youtube" && !!youtube.estado?.tocando) || fonte.tipo === "tela";
+    const filmeRolando = (fonte.tipo === "youtube" && !!youtube.estado?.tocando) || fonte.tipo === "tela" || fonte.tipo === "mosaico";
     const luzes = controle.estado?.luzes ?? "AUTO";
     const naSalaDaCall = !!salaDaCall && salaAtual === salaDaCall.canalId;
     const escuro = naSalaDaCall && (luzes === "APAGADAS" || (luzes === "AUTO" && !!cinema && filmeRolando));
@@ -580,7 +582,7 @@ function Andar({
                     posicoes={posicoes}
                     pessoasPorSala={pessoasPorSala}
                     salaDaCall={vozNoAndar}
-                    telaDaSala={telaDaSala}
+                    telasDaSala={telasDaSala}
                     youtube={youtubeNaTV}
                     portaAberta={portaAberta}
                     portaFechada={portaFechada}

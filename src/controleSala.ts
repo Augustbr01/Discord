@@ -5,14 +5,14 @@ import type { EstadoSala, ModoLuzes, PaletaLed } from "./interface/Evento";
 const salas = new Map<string, EstadoSala>();
 
 export type ComandoSala =
-    | { acao: "TV"; modo: "AUTO" | "YOUTUBE" | "DESLIGADA" }
+    | { acao: "TV"; modo: "AUTO" | "YOUTUBE" | "MOSAICO" | "DESLIGADA" }
     | { acao: "TV_TELA"; identidade: string }
     | { acao: "VOLUME"; volume: number }
     | { acao: "SURROUND"; ligado: boolean }
     | { acao: "LUZES"; modo: ModoLuzes }
     | { acao: "LED"; paleta?: PaletaLed; ciclo?: boolean; ligado?: boolean };
 
-const MODOS_TV = ["AUTO", "YOUTUBE", "DESLIGADA"];
+const MODOS_TV = ["AUTO", "YOUTUBE", "MOSAICO", "DESLIGADA"];
 const MODOS_LUZES = ["AUTO", "ACESAS", "APAGADAS"];
 const PALETAS = ["NEON", "BRASA", "AURORA", "SAKURA", "MONO"];
 

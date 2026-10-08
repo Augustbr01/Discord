@@ -40,7 +40,8 @@ export type ComandoYoutube =
     | { acao: "DURACAO"; videoId: string; segundos: number };
 
 // controle da sala (o "tablet"): o que aparece na TV, volume e surround da TV, e as luzes
-export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "DESLIGADA";
+// MOSAICO: todas as telas compartilhadas ao mesmo tempo, em grade
+export type ModoTV = "AUTO" | "YOUTUBE" | "TELA" | "MOSAICO" | "DESLIGADA";
 export type ModoLuzes = "AUTO" | "ACESAS" | "APAGADAS";
 // LEDs da sala gamer. paleta null = a cor padrão da sala (cada sala tem a sua)
 export type PaletaLed = "NEON" | "BRASA" | "AURORA" | "SAKURA" | "MONO";
@@ -56,7 +57,7 @@ export type EstadoSala = {
     ultima: { usuarioId: string; acao: string } | null;
 };
 export type ComandoSala =
-    | { acao: "TV"; modo: "AUTO" | "YOUTUBE" | "DESLIGADA" }
+    | { acao: "TV"; modo: "AUTO" | "YOUTUBE" | "MOSAICO" | "DESLIGADA" }
     | { acao: "TV_TELA"; identidade: string }
     | { acao: "VOLUME"; volume: number }
     | { acao: "SURROUND"; ligado: boolean }

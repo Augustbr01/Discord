@@ -20,8 +20,8 @@ import { Elevador } from "./Elevador";
 import { Hitboxes } from "./Hitboxes";
 import { Jogador, type ControleToque, type PedidoJogador } from "./Jogador";
 import type { Interativo, Planta, Ponto } from "./planta";
-import { Predio, type YoutubeNaTV } from "./Predio";
 import type { LinhaChat } from "./Holograma";
+import { Predio, type TelaNaTV, type YoutubeNaTV } from "./Predio";
 import type { Pose } from "./rede";
 
 export type Pessoa = {
@@ -44,7 +44,7 @@ type Props = {
     posicoes: Map<string, Ponto>;
     pessoasPorSala: Map<string, number>;
     salaDaCall: string | null;
-    telaDaSala: Track | undefined;
+    telasDaSala: TelaNaTV[];
     youtube: YoutubeNaTV | undefined;
     portaAberta: boolean;
     portaFechada: RefObject<boolean>;
@@ -168,7 +168,7 @@ export function Cena(props: Props) {
                     andar={props.andar}
                     pessoasPorSala={props.pessoasPorSala}
                     salaDaCall={props.salaDaCall}
-                    telaDaSala={props.telaDaSala}
+                    telasDaSala={props.telasDaSala}
                     youtube={props.youtube}
                     salaEscura={props.escuro ? props.salaDaCall : null}
                     led={props.led}

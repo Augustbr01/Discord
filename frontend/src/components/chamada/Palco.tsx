@@ -111,10 +111,10 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
     const telaMaisRecente = telasPorChegada[telasPorChegada.length - 1] ?? null;
 
     // o automático segue o que escolheram pra TV no controle da sala (o tablet):
-    // desligada = grade; uma tela específica; o YouTube; senão a tela mais recente
+    // desligada ou mosaico = grade (todo mundo junto); uma tela específica; o YouTube; senão a tela mais recente
     const tv = controle.estado?.tv;
     const telaDaTV = tv?.modo === "TELA" && tv.identidade ? chaveTela(tv.identidade) : null;
-    const destaqueAutomatico = tv?.modo === "DESLIGADA"
+    const destaqueAutomatico = tv?.modo === "DESLIGADA" || tv?.modo === "MOSAICO"
         ? null
         : telaDaTV && existentes.has(telaDaTV) ? telaDaTV : videoYoutube ? CHAVE_YOUTUBE : telaMaisRecente;
 
