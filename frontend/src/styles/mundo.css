@@ -328,9 +328,9 @@
     bottom: 16px;
     translate: -50% 0;
     z-index: 8;
-    width: min(560px, calc(100vw - 24px));
-    height: min(520px, calc(100dvh - 96px));
-    padding: 14px;
+    width: min(980px, calc(100vw - 24px));
+    height: min(560px, calc(100dvh - 96px));
+    padding: 14px 14px 14px 22px;
     border-radius: 30px;
     background: linear-gradient(160deg, #26262b, #111113 60%);
     border: 1px solid #3a3a40;
@@ -338,15 +338,15 @@
     animation: tablet-subir 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* a câmera frontal do tablet */
+/* a câmera frontal do tablet (deitado: fica no lado esquerdo) */
 .mundo-tablet::before {
     content: "";
     position: absolute;
-    top: 5px;
-    left: 50%;
+    top: 50%;
+    left: 8px;
     width: 6px;
     height: 6px;
-    translate: -50% 0;
+    translate: 0 -50%;
     border-radius: 50%;
     background: #0a0a0c;
     box-shadow: 0 0 0 1px #2c2c31;

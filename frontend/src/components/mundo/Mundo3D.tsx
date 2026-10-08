@@ -680,6 +680,7 @@ function Andar({
                             eu={eu}
                             telas={midia.telasDaCall}
                             abaInicial={controleAberto}
+                            formato="tablet"
                             aviso={
                                 !voz ? "Entre numa sala de voz pra controlar a TV, o som e as luzes dela."
                                 : voz.hall ? "No hall não tem TV. Entre numa sala pra controlar a TV, o som e as luzes dela."
