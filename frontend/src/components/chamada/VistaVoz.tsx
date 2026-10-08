@@ -5,6 +5,7 @@ import { chaveTela, useFocoChamada } from "../../contexto/FocoChamada";
 import { Avatar } from "../ui/Avatar";
 import { Cabecalho } from "../ui/Cabecalho";
 import { Palco } from "./Palco";
+import { TempoSala } from "./TempoSala";
 
 type Props = {
     canal: Canal;
@@ -28,7 +29,13 @@ export function VistaVoz({ canal, eu, membros, voz, pessoas, entrando, onEntrar,
 
     return (
         <div className="vista">
-            <Cabecalho icone={<Volume2 size={20} />} titulo={canal.nome} onMenu={onMenu} />
+            <Cabecalho
+                icone={<Volume2 size={20} />}
+                titulo={canal.nome}
+                // a chamada da sala, pra quem está olhando de fora
+                descricao={canal.inicioCall && pessoas.length > 0 ? <TempoSala inicio={canal.inicioCall} /> : undefined}
+                onMenu={onMenu}
+            />
 
             <div className="voz-fora">
                 <div className="voz-fora-conteudo">

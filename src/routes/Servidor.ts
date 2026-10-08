@@ -1,7 +1,7 @@
-import { Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { RecordPattern, Type, type FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {prisma} from "../../lib/prisma"
 import { Permissao,TipoCanal } from "../../generated/prisma/enums";
-import { limparCall, participantesDaCall, telasDaCall } from "../eventosCall";
+import { devolverTempoCall, limparCall, participantesDaCall, telasDaCall } from "../eventosCall";
 import { publicarParaServidor, publicarParaUsuarios } from "./eventosConexao";
 import { roomService } from "../config/RoomService";
 import { AcaoUsuario } from "../interface/Evento";
@@ -86,6 +86,67 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         if(!isAdmin) {
             return rep.code(401).send({mensagem:"Acesso negado"});
         }
+    })
+
+    fastify.get("/servidor/banidos/:id", {schema:{params:Type.Object({id:Type.String()})}},async (req,rep) => {
+        const usuarioId = req.user.id;
+
+        const {id} = req.params;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where:{permissao:Permissao.ADMIN,usuarioId_servidorId:{usuarioId:usuarioId,servidorId:id}}});
+
+        if(!isAdmin) {
+            return rep.code(401).send({mensagem:"Acesso negado!"});
+        }
+
+        const banimentos = await prisma.banimentoServidor.findMany({where:{servidorId:id},select:{criadoEm:true,usuario: {select: {id:true,nome:true,avatarUrl:true}}}});
+
+        return rep.code(200).send(banimentos);
+    })
+
+    fastify.post("/servidor/banir", {schema: {body: Type.Object({servidorId:Type.String(),membroId:Type.String()})}}, async (req,rep) => {
+        const usuarioId = req.user.id;
+        const {servidorId,membroId} = req.body;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where: {permissao: Permissao.ADMIN,usuarioId_servidorId: {usuarioId:usuarioId,servidorId:servidorId}}});
+
+        if(!isAdmin) {
+            return rep.code(401).send({mensagem:"Acesso não autorizado!"});
+        }
+
+        const atual = new Date();
+
+        try {
+            await prisma.$transaction([
+                prisma.usuarioServidor.delete({where:{permissao: Permissao.MEMBRO,usuarioId_servidorId: {usuarioId:membroId,servidorId:servidorId}}}),
+                prisma.banimentoServidor.create({data: {servidorId:servidorId,usuarioId:membroId,criadoEm:atual}})
+            ])
+        }catch(e) {
+            return rep.code(401).send({mensagem:"Erro ao banir usuário"});
+        }
+        await publicarParaServidor(servidorId,{tipo:"MEMBROS",servidorId:servidorId,usuarioId:membroId,acao: AcaoUsuario.BANIDO});
+        await publicarParaUsuarios([membroId],{tipo:"MEMBROS",servidorId:servidorId,usuarioId:membroId,acao: AcaoUsuario.BANIDO});
+
+        return rep.code(201).send({ok:true});
+    })
+
+    fastify.post("/servidor/desbanir", {schema: {body: Type.Object({servidorId:Type.String(),membroId:Type.String()})}} ,async (req,rep) => {
+        const usuarioId = req.user.id;
+        const {servidorId,membroId} = req.body;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where:{permissao: Permissao.ADMIN,usuarioId_servidorId:{usuarioId:usuarioId,servidorId:servidorId}}});
+
+        if(!isAdmin) {
+            return rep.code(401).send({mensagem:"Sem permissão!"});
+        }
+
+        try {
+            await prisma.banimentoServidor.delete({where:{usuarioId_servidorId:{usuarioId:membroId,servidorId:servidorId}}});
+        }catch(e) {
+            return rep.code(404).send({mensagem:"Falha ao retirar banimento!"});
+        }
+
+        return rep.code(201).send({ok:true});
     })
 
     fastify.post("/servidor/mensagem/criar", {schema: {body: Type.Object({canalId: Type.String(),mensagem:Type.String({minLength: 1,maxLength:1000})})}} ,async (req,rep) => {
@@ -199,9 +260,10 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         }
 
         const pessoasVoz = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((c) => [c.id,participantesDaCall(c.id)]));
+        const iniciosVoz = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((c) => [c.id,devolverTempoCall(c.id)]));
         const telas = Object.fromEntries(entidade.canais.filter((a) => a.tipo === TipoCanal.VOZ).map((v) => [v.id,telasDaCall(v.id)]));
 
-        return rep.code(200).send({...entidade,pessoasVoz,telas});
+        return rep.code(200).send({...entidade,pessoasVoz,telas,iniciosVoz});
     })
 
     fastify.post("/servidor/convite-criar", {schema: {body: Type.Object({idServidor:Type.String(),expiraEm:Type.Optional(Type.Integer({minimum: 60, maximum: 60 * 60 * 24 * 30}))})}} ,async (req,rep) => {
@@ -313,6 +375,12 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             return rep.code(400).send({mensagem:"Você já é membro deste servidor"});
         }
 
+        const isBanido = await prisma.banimentoServidor.findUnique({where: {usuarioId_servidorId: {usuarioId:idUsuario,servidorId:entidade.servidorId}},select: {id:true}});
+
+        if(isBanido) {
+            return rep.code(403).send({mensagem:"Você está banido deste servidor!"});
+        }
+
         const criado = await prisma.usuarioServidor.create({data: {
             usuarioId:idUsuario,
             servidorId:entidade.servidorId
@@ -326,6 +394,11 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
             }
         }})
 
+        await publicarParaServidor(entidade.servidorId,{tipo:"MEMBROS",servidorId:entidade.servidorId,usuarioId:idUsuario,acao: AcaoUsuario.ENTROU});
+
         return rep.code(200).send(criado);
+    })
+
+    fastify.post("/servidor/sair", {schema:{body: Type.Object({})}}, async (req,rep) => {
     })
 }

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
+import { ChevronDown, DoorOpen, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
 import type { Canal, ServidorDetalhe, TipoCanal, Usuario } from "../api";
 import { useControleVoz } from "../contexto/ControleVoz";
 import { chaveTela, useFocoChamada } from "../contexto/FocoChamada";
@@ -8,6 +8,7 @@ import { useCliqueFora } from "../hooks/useCliqueFora";
 import type { MapaMembros, Voz } from "../tipos";
 import { PessoasAoVivo } from "./chamada/AoVivo";
 import { PainelVoz } from "./chamada/PainelVoz";
+import { TempoSala } from "./chamada/TempoSala";
 import { PainelUsuario } from "./PainelUsuario";
 import { Avatar } from "./ui/Avatar";
 import { Dica } from "./ui/Dica";
@@ -25,7 +26,10 @@ type Props = {
     onApagarCanal: (canal: Canal) => void;
     onConvidar: () => void;
     onNovoCanal: (tipo: TipoCanal) => void;
-    onEditarServidor: () => void;
+    onConfiguracoes: () => void;
+    // o dono não sai (o servidor ficaria sem dono): pra ele o menu não tem "Sair"
+    souDono: boolean;
+    onSairServidor: () => void;
     onAbrirChamada: () => void;
     onSairChamada: () => void;
     onEditarFoto: () => void;
@@ -62,7 +66,9 @@ export function PainelCanais(props: Props) {
                     souAdmin={souAdmin}
                     onConvidar={props.onConvidar}
                     onNovoCanal={props.onNovoCanal}
-                    onEditar={props.onEditarServidor}
+                    onConfiguracoes={props.onConfiguracoes}
+                    souDono={props.souDono}
+                    onSair={props.onSairServidor}
                 />
             ) : (
                 <div className="painel-canais-topo">
@@ -102,6 +108,10 @@ export function PainelCanais(props: Props) {
                                             >
                                                 <Volume2 size={18} className="canal-icone" />
                                                 <span className="truncar">{c.nome}</span>
+                                                {/* há quanto tempo a chamada da sala está rolando (pra quem está fora também) */}
+                                                {c.inicioCall && (pessoas.length > 0 || conectado) && (
+                                                    <TempoSala inicio={c.inicioCall} className="canal-tempo" />
+                                                )}
                                                 {entrandoEm === c.id && <Loader2 size={14} className="girar canal-carregando" />}
                                             </button>
                                             {souAdmin && <AcoesCanal canal={c} onApagar={props.onApagarCanal} />}
@@ -162,19 +172,22 @@ export function PainelCanais(props: Props) {
 type CabecalhoProps = {
     servidor: ServidorDetalhe;
     souAdmin: boolean;
+    souDono: boolean;
+    onSair: () => void;
     onConvidar: () => void;
     onNovoCanal: (tipo: TipoCanal) => void;
-    onEditar: () => void;
+    onConfiguracoes: () => void;
 };
 
-// nome do servidor; pra admin vira um menu com as ações do servidor
-function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal, onEditar }: CabecalhoProps) {
+// nome do servidor; vira um menu: admin tem as ações do servidor, e quem não é dono pode sair
+function CabecalhoServidor({ servidor, souAdmin, souDono, onConvidar, onNovoCanal, onConfiguracoes, onSair }: CabecalhoProps) {
     const [aberto, setAberto] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const fechar = useCallback(() => setAberto(false), []);
     useCliqueFora(ref, aberto, fechar);
 
-    if (!souAdmin) {
+    // sem nada pra mostrar no menu (não acontece hoje: o dono sempre é admin)
+    if (!souAdmin && souDono) {
         return (
             <div className="painel-canais-topo">
                 <strong className="truncar">{servidor.nome}</strong>
@@ -201,20 +214,32 @@ function CabecalhoServidor({ servidor, souAdmin, onConvidar, onNovoCanal, onEdit
 
             {aberto && (
                 <div className="menu menu-servidor" role="menu">
-                    <button role="menuitem" className="menu-item" onClick={() => executar(onConvidar)}>
-                        Convidar pessoas <UserPlus size={16} />
-                    </button>
-                    <span className="menu-separador" />
-                    <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("TEXTO"))}>
-                        Criar canal de texto <Hash size={16} />
-                    </button>
-                    <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("VOZ"))}>
-                        Criar sala de voz <Volume2 size={16} />
-                    </button>
-                    <span className="menu-separador" />
-                    <button role="menuitem" className="menu-item" onClick={() => executar(onEditar)}>
-                        Editar servidor <Settings size={16} />
-                    </button>
+                    {souAdmin && (
+                        <>
+                            <button role="menuitem" className="menu-item" onClick={() => executar(onConvidar)}>
+                                Convidar pessoas <UserPlus size={16} />
+                            </button>
+                            <span className="menu-separador" />
+                            <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("TEXTO"))}>
+                                Criar canal de texto <Hash size={16} />
+                            </button>
+                            <button role="menuitem" className="menu-item" onClick={() => executar(() => onNovoCanal("VOZ"))}>
+                                Criar sala de voz <Volume2 size={16} />
+                            </button>
+                            <span className="menu-separador" />
+                            <button role="menuitem" className="menu-item" onClick={() => executar(onConfiguracoes)}>
+                                Configurações do servidor <Settings size={16} />
+                            </button>
+                        </>
+                    )}
+                    {!souDono && (
+                        <>
+                            {souAdmin && <span className="menu-separador" />}
+                            <button role="menuitem" className="menu-item menu-item-perigo" onClick={() => executar(onSair)}>
+                                Sair do servidor <DoorOpen size={16} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
         </div>

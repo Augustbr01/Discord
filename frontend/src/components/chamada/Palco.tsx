@@ -170,7 +170,8 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
             <Cabecalho
                 icone={<Volume2 size={20} />}
                 titulo={voz.canal.nome}
-                descricao={conectado ? cronometro(agora - voz.desde) : "Conectando…"}
+                // o tempo da sala (o mesmo da lista de canais); sem ele, desde que você entrou
+                descricao={conectado ? cronometro(agora - (voz.inicioSala ? Date.parse(voz.inicioSala) : voz.desde)) : "Conectando…"}
                 onMenu={onMenu}
             >
                 <Dica texto={chatAberto ? "Fechar chat" : "Chat da sala"} lado="baixo">

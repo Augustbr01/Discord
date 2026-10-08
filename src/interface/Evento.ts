@@ -25,18 +25,21 @@ export enum statusTela {
 }
 
 export enum AcaoUsuario {
-    EXPULSO = "EXPULSO"
+    EXPULSO = "EXPULSO",
+    BANIDO = "BANIDO",
+    ENTROU = "ENTROU",
+    SAIU = "SAIU"
 }
 
 export type Evento =
     | {tipo: "MEMBROS";servidorId: string,usuarioId : string;acao: AcaoUsuario}
     | {tipo:"TELA";canalId:string;usuarioId : string; statusTela: statusTela}
-    | { tipo: "ENTROU_NA_CALL"; canalId: string; usuarioId: string }
+    | { tipo: "ENTROU_NA_CALL"; canalId: string; usuarioId: string;inicioCall? : Date | undefined}
     | { tipo: "SAIU_DA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "MENSAGEM_CRIADA";servidorId: string;canalId: string; mensagem: Mensagem }
     | {tipo: "MENSAGEM_EDITADA";servidorId: string; canalId: string; mensagem: Mensagem}
     | {tipo: "MENSAGEM_DELETADA";servidorId: string;canalId: string; mensagem: MensagemDeletada}                                    
     | { tipo: "CANAL_CRIADO"; servidorId: string ;canal: Canal }
     | {tipo: "CANAL_APAGADO"; servidorId : string ;canalId: string }
-    | {tipo: "UPDATE_SERVER"; servidorId: string; nome : string}
+    | {tipo: "UPDATE_SERVER"; servidorId: string; nome? : string | null,iconeUrl? : string | null}
     | {tipo: "DIGITANDO"; usuarioId : string,canalId: string}

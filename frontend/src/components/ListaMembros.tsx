@@ -1,4 +1,4 @@
-import { Crown, Volume2 } from "lucide-react";
+import { Crown, Volume2, X } from "lucide-react";
 import type { Membro, ServidorDetalhe, Usuario } from "../api";
 import { usePerfil } from "../contexto/Perfil";
 import { Avatar } from "./ui/Avatar";
@@ -9,15 +9,24 @@ type Props = {
     eu: Usuario;
     // id do usuário -> nome da sala em que está
     emChamada: Map<string, string>;
+    // em tela estreita a lista abre por cima do chat e tem o próprio botão de fechar
+    onFechar: () => void;
 };
 
 // coluna da direita: quem faz parte do servidor
-export function ListaMembros({ servidor, eu, emChamada }: Props) {
+export function ListaMembros({ servidor, eu, emChamada, onFechar }: Props) {
     const admins = servidor.membros.filter((m) => m.permissao === "ADMIN");
     const membros = servidor.membros.filter((m) => m.permissao !== "ADMIN");
 
     return (
         <aside className="lista-membros" aria-label="Membros">
+            <header className="lista-membros-topo">
+                <strong>Membros</strong>
+                <span className="lista-membros-total">{servidor.membros.length}</span>
+                <button className="botao-icone" onClick={onFechar} aria-label="Fechar a lista de membros">
+                    <X size={18} />
+                </button>
+            </header>
             <Grupo titulo="Admins" membros={admins} donoId={servidor.dono.id} eu={eu} emChamada={emChamada} />
             <Grupo titulo="Membros" membros={membros} donoId={servidor.dono.id} eu={eu} emChamada={emChamada} />
         </aside>
@@ -32,7 +41,7 @@ function Grupo({ titulo, membros, donoId, eu, emChamada }: GrupoProps) {
 
     return (
         <section className="membros-grupo">
-            <span className="rotulo">{titulo}</span>
+            <span className="rotulo">{titulo} — {membros.length}</span>
             {membros.map(({ usuario }) => {
                 const sala = emChamada.get(usuario.id);
                 return (

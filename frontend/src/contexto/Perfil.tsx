@@ -17,15 +17,16 @@ type Props = {
     // trocou de servidor: o cartão aberto era de lá, então fecha
     servidorId: string | null;
     onEditarFoto: () => void;
-    // quem você pode expulsar do servidor aberto, e o que fazer quando pedir
-    podeExpulsar: (usuario: Usuario) => boolean;
+    // quem você pode expulsar ou banir do servidor aberto, e o que fazer quando pedir
+    podeModerar: (usuario: Usuario) => boolean;
     onExpulsar: (usuario: Usuario) => void;
+    onBanir: (usuario: Usuario) => void;
     children: ReactNode;
 };
 
 type Aberto = { usuario: Usuario; ancora: HTMLElement };
 
-export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeExpulsar, onExpulsar, children }: Props) {
+export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeModerar, onExpulsar, onBanir, children }: Props) {
     const [aberto, setAberto] = useState<Aberto | null>(null);
     const fechar = useCallback(() => setAberto(null), []);
 
@@ -56,11 +57,17 @@ export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeExpu
                         fechar();
                         onEditarFoto();
                     }}
-                    onExpulsar={
-                        podeExpulsar(usuario)
-                            ? () => {
-                                  fechar();
-                                  onExpulsar(usuario);
+                    moderacao={
+                        podeModerar(usuario)
+                            ? {
+                                  expulsar: () => {
+                                      fechar();
+                                      onExpulsar(usuario);
+                                  },
+                                  banir: () => {
+                                      fechar();
+                                      onBanir(usuario);
+                                  },
                               }
                             : undefined
                     }

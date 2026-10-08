@@ -4,7 +4,27 @@ import { mensagemDeErro, type Usuario } from "../../api";
 import { Avatar } from "../ui/Avatar";
 import { Dialogo } from "../ui/Dialogo";
 
+// expulsar: sai, mas volta com um convite novo; banir: sai e não volta até tirarem o banimento
+export type ModoRemocao = "expulsar" | "banir";
+
+const TEXTOS: Record<ModoRemocao, { titulo: string; sai: string; explicacao: string; botao: string }> = {
+    expulsar: {
+        titulo: "Expulsar do servidor",
+        sai: "sai de",
+        explicacao: "A pessoa deixa de ver os canais e as mensagens, e só volta se receber um novo convite.",
+        botao: "Expulsar",
+    },
+    banir: {
+        titulo: "Banir do servidor",
+        sai: "sai e não volta para",
+        explicacao:
+            "A pessoa sai do servidor e não consegue entrar de novo, nem com convite. Dá pra desfazer em Configurações do servidor → Banimentos.",
+        botao: "Banir",
+    },
+};
+
 type Props = {
+    modo: ModoRemocao;
     usuario: Usuario;
     servidorNome: string;
     onFechar: () => void;
@@ -12,10 +32,11 @@ type Props = {
     onConfirmar: () => Promise<void>;
 };
 
-// confirmação antes de expulsar alguém do servidor
-export function ExpulsarMembro({ usuario, servidorNome, onFechar, onConfirmar }: Props) {
+// confirmação antes de expulsar ou banir alguém do servidor
+export function RemoverMembro({ modo, usuario, servidorNome, onFechar, onConfirmar }: Props) {
     const [enviando, setEnviando] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
+    const textos = TEXTOS[modo];
 
     async function confirmar() {
         setEnviando(true);
@@ -29,19 +50,17 @@ export function ExpulsarMembro({ usuario, servidorNome, onFechar, onConfirmar }:
     }
 
     return (
-        <Dialogo titulo="Expulsar do servidor" onFechar={onFechar}>
+        <Dialogo titulo={textos.titulo} onFechar={onFechar}>
             <div className="formulario">
                 <div className="expulsar-quem">
                     <Avatar nome={usuario.nome} url={usuario.avatarUrl} tamanho={40} />
                     <div>
                         <strong className="truncar">{usuario.nome}</strong>
-                        <span>sai de {servidorNome}</span>
+                        <span>{textos.sai} {servidorNome}</span>
                     </div>
                 </div>
 
-                <p className="texto-fraco">
-                    A pessoa deixa de ver os canais e as mensagens, e só volta se receber um novo convite.
-                </p>
+                <p className="texto-fraco">{textos.explicacao}</p>
 
                 {erro && <p className="texto-erro">{erro}</p>}
 
@@ -50,7 +69,7 @@ export function ExpulsarMembro({ usuario, servidorNome, onFechar, onConfirmar }:
                     {/* foco aqui: Enter confirma, Esc cancela */}
                     <button type="button" className="botao botao-perigo" onClick={confirmar} disabled={enviando} autoFocus>
                         {enviando && <Loader2 size={16} className="girar" />}
-                        Expulsar
+                        {textos.botao}
                     </button>
                 </div>
             </div>

@@ -35,6 +35,10 @@ export function useMensagens(canalId: string, eu: Usuario) {
 
     useEffect(() => {
         let ativo = true;
+        // já mostrou mensagens deste canal (aí uma falha ao rebuscar não vira aviso de erro)
+        let carregou = false;
+        let tentativa = 0;
+        let retentar: number | undefined;
 
         setEstado("carregando");
         setMensagens([]);
@@ -43,10 +47,13 @@ export function useMensagens(canalId: string, eu: Usuario) {
         setCarregandoMais(false);
         carregandoRef.current = false;
 
-        const buscar = async (primeira: boolean) => {
+        const buscar = async () => {
+            window.clearTimeout(retentar);
             try {
                 const lista = await api.listarMensagens(canalId);
                 if (!ativo) return;
+                carregou = true;
+                tentativa = 0;
                 setMensagens(ordenar(lista));
                 setTemMais(lista.length >= LIMITE); // veio página cheia? pode ter mais
                 setEstado("pronto");
@@ -57,11 +64,13 @@ export function useMensagens(canalId: string, eu: Usuario) {
                     setEstado("indisponivel");
                     return;
                 }
-                if (primeira) setEstado("erro");
+                if (!carregou) setEstado("erro");
+                // tenta de novo sozinho (o aviso promete isso): 3s, 6s, 12s… no máximo a cada 30s
+                retentar = window.setTimeout(buscar, Math.min(3000 * 2 ** tentativa++, 30_000));
             }
         };
 
-        buscar(true);
+        buscar();
 
         // mensagem nova deste canal chega pelo gateway (dedup por id porque quem
         // enviou também recebe o próprio evento, além da resposta do POST)
@@ -78,10 +87,11 @@ export function useMensagens(canalId: string, eu: Usuario) {
             }
         });
         // ao reconectar, rebusca pra pegar o que chegou enquanto esteve offline
-        const pararReconexao = gateway.aoReconectar(() => buscar(true));
+        const pararReconexao = gateway.aoReconectar(buscar);
 
         return () => {
             ativo = false;
+            window.clearTimeout(retentar);
             pararEventos();
             pararReconexao();
         };
@@ -91,7 +101,7 @@ export function useMensagens(canalId: string, eu: Usuario) {
         try {
             const salva = await api.enviarMensagem(canalId, local.conteudo);
             setPendentes((p) => p.filter((m) => m.idLocal !== local.idLocal));
-            setMensagens((m) => (m.some((x) => x.id === salva.id) ? m : [...m, salva]));
+            setMensagens((m) => (m.some((x) => x.id === salva.id) ? m : ordenar([...m, salva])));
         } catch {
             setPendentes((p) => p.map((m) => (m.idLocal === local.idLocal ? { ...m, estado: "falhou" } : m)));
         }

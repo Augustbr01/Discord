@@ -998,4 +998,15 @@
     .controles-divisor {
         display: none;
     }
+
+    /* os menus (dispositivos, opções da tela) centralizam na barra inteira, não no botão:
+       centrado no botão da direita, o de dispositivos saía da tela */
+    .controle-grupo,
+    .controles-config {
+        position: static;
+    }
+
+    .menu-cima {
+        width: min(300px, calc(100vw - 24px));
+    }
 }

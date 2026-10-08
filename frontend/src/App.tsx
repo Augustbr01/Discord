@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
 import { DisconnectReason, MediaDeviceFailure, ScreenSharePresets, VideoPresets, type RoomOptions } from "livekit-client";
-import { Bird, Camera, Hash, Loader2, LogOut, PhoneOff, Plus, Settings, Ticket, UserPlus, Users, Volume2 } from "lucide-react";
+import { Ban, Bird, Camera, DoorOpen, Hash, Loader2, LogOut, PhoneOff, Plus, Settings, Ticket, Trash2, UserPlus, Users, Volume2 } from "lucide-react";
 import {
     api, mensagemDeErro, talvezDeslogado,
     type Canal, type ServidorResumo, type TipoCanal, type Usuario,
@@ -11,7 +11,7 @@ import { ControleVozProvider } from "./contexto/ControleVoz";
 import { FocoChamadaProvider } from "./contexto/FocoChamada";
 import { PerfilProvider } from "./contexto/Perfil";
 import { ToastProvider, useToast } from "./contexto/Toasts";
-import { removerMembro, useServidor } from "./hooks/useServidor";
+import { atualizarResumo, removerMembro, useServidor } from "./hooks/useServidor";
 import { useSonsDeVoz } from "./hooks/useSonsDeVoz";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
@@ -23,11 +23,12 @@ import { VistaVoz } from "./components/chamada/VistaVoz";
 import { ListaMembros } from "./components/ListaMembros";
 import { Login } from "./components/Login";
 import { Convidar } from "./components/modais/Convidar";
-import { EditarServidor } from "./components/modais/EditarServidor";
-import { ExpulsarMembro } from "./components/modais/ExpulsarMembro";
+import { ConfiguracoesServidor, type AbaConfiguracoes } from "./components/modais/ConfiguracoesServidor";
 import { FotoPerfil } from "./components/modais/FotoPerfil";
 import { NovoCanal } from "./components/modais/NovoCanal";
 import { NovoServidor, type AbaServidor } from "./components/modais/NovoServidor";
+import { DeixarServidor, type ModoDeixar } from "./components/modais/DeixarServidor";
+import { RemoverMembro, type ModoRemocao } from "./components/modais/RemoverMembro";
 import { PainelCanais } from "./components/PainelCanais";
 import { Paleta, type ItemPaleta } from "./components/Paleta";
 import { SemServidor } from "./components/SemServidor";
@@ -65,8 +66,9 @@ type ModalAberto =
     | { tipo: "convidar" }
     | { tipo: "canal"; tipoCanal: TipoCanal }
     | { tipo: "foto" }
-    | { tipo: "editar-servidor" }
-    | { tipo: "expulsar"; usuario: Usuario }
+    | { tipo: "configuracoes"; aba: AbaConfiguracoes }
+    | { tipo: "remover"; modo: ModoRemocao; usuario: Usuario }
+    | { tipo: "deixar"; modo: ModoDeixar }
     | null;
 
 // quem abre /convite/<id> sem estar logado passa pelo login e volta pra "/",
@@ -112,8 +114,9 @@ function Aplicacao() {
     const [entrandoEm, setEntrandoEm] = useState<string | null>(null);
     const [micPreferido, setMicPreferido] = useState(() => lerArmazenado(CHAVE_MIC, true));
     const [surdo, setSurdo] = useState(false);
-    // em tela estreita a lista de membros cobre o conteúdo, então sempre começa fechada
-    const [membrosVisivel, setMembrosVisivel] = useState(() => window.innerWidth >= 1100 && lerArmazenado(CHAVE_MEMBROS, true));
+    // em tela estreita (até 1100px, igual ao CSS) a lista de membros cobre o conteúdo,
+    // então sempre começa fechada
+    const [membrosVisivel, setMembrosVisivel] = useState(() => window.innerWidth > 1100 && lerArmazenado(CHAVE_MEMBROS, true));
     const [modal, setModal] = useState<ModalAberto>(null);
     const [paletaAberta, setPaletaAberta] = useState(false);
     const [menuAberto, setMenuAberto] = useState(false);
@@ -126,6 +129,8 @@ function Aplicacao() {
             return !v;
         });
     }, []);
+    // fechar a lista que abriu por cima do chat (fundo escuro ou o X dela) não muda a escolha salva
+    const fecharMembros = useCallback(() => setMembrosVisivel(false), []);
 
     const tratarErro = useCallback(async (err: unknown) => {
         // o erro pode ser só "não encontrado" ou a sessão ter vencido: o /dataUser tira a dúvida
@@ -176,35 +181,62 @@ function Aplicacao() {
         });
     }, [euId]);
 
-    // servidor renomeado (por você ou outro admin): atualiza o nome na lista de servidores.
+    // servidor mudou de nome ou de ícone (por você ou outro admin): atualiza a barra de servidores.
     // O servidor aberto se atualiza sozinho no useServidor
     useEffect(() => {
         if (!euId) return;
         return gateway.assinar((evento) => {
             if (evento.tipo !== "UPDATE_SERVER") return;
-            setServidores((lista) => lista && lista.map((s) => (s.id === evento.servidorId ? { ...s, nome: evento.nome } : s)));
+            setServidores((lista) => lista && lista.map((s) => (s.id === evento.servidorId ? atualizarResumo(s, evento) : s)));
         });
     }, [euId]);
 
-    // você foi expulso de um servidor: ele some da barra, a chamada de lá cai e você vai pra outro
     const servidoresRef = useRef(servidores);
     useEffect(() => {
         servidoresRef.current = servidores;
     }, [servidores]);
 
+    // um servidor deixou de ser seu (você saiu, foi expulso ou banido, ou ele foi apagado): some da
+    // barra, a chamada de lá cai e você vai pra outro. A ação e o evento do gateway chamam isso os
+    // dois, em qualquer ordem: o primeiro faz tudo e avisa, o segundo não acha mais o servidor e para
+    const deixarServidor = useCallback((servidorId: string, tipoAviso: "sucesso" | "info", aviso: (nome: string) => string) => {
+        const lista = servidoresRef.current ?? [];
+        const servidor = lista.find((s) => s.id === servidorId);
+        if (!servidor) return;
+        servidoresRef.current = lista.filter((s) => s.id !== servidorId); // já vale pro próximo chamado
+        setServidores((atual) => atual && atual.filter((s) => s.id !== servidorId));
+        setVoz((v) => (v && v.servidorId === servidorId ? null : v));
+        setNaoLidos((n) => (n[servidorId] ? { ...n, [servidorId]: 0 } : n));
+        if (servidorIdRef.current === servidorId) setServidorId(lista.find((s) => s.id !== servidorId)?.id ?? null);
+        toast[tipoAviso](aviso(servidor.nome));
+    }, [toast]);
+
+    // você saiu de um servidor (por outra aba ou aparelho), foi expulso ou banido.
+    // Você entrou num: aparece na barra das suas outras abas
     useEffect(() => {
         if (!euId) return;
         return gateway.assinar((evento) => {
             if (evento.tipo !== "MEMBROS" || evento.usuarioId !== euId) return;
             const daqui = evento.servidorId;
-            const lista = servidoresRef.current ?? [];
-            const nome = lista.find((s) => s.id === daqui)?.nome;
-            setServidores((atual) => atual && atual.filter((s) => s.id !== daqui));
-            setVoz((v) => (v && v.servidorId === daqui ? null : v));
-            if (servidorIdRef.current === daqui) setServidorId(lista.find((s) => s.id !== daqui)?.id ?? null);
-            toast.info(nome ? `Você foi removido de ${nome}.` : "Você foi removido de um servidor.");
+            // você entrou num servidor: nesta aba já aparece pela resposta do convite; numas outras
+            // abas ou aparelhos ele ainda não está na barra, então busca a lista de novo
+            if (evento.acao === "ENTROU") {
+                if (!(servidoresRef.current ?? []).some((s) => s.id === daqui)) api.listarServidores().then(setServidores).catch(() => {});
+                return;
+            }
+            if (evento.acao === "SAIU") deixarServidor(daqui, "info", (nome) => `Você saiu de ${nome}.`);
+            else deixarServidor(daqui, "info", (nome) => `Um admin te ${evento.acao === "BANIDO" ? "baniu" : "removeu"} de ${nome}.`);
         });
-    }, [euId, toast]);
+    }, [euId, deixarServidor]);
+
+    // o dono apagou um servidor em que você está
+    useEffect(() => {
+        if (!euId) return;
+        return gateway.assinar((evento) => {
+            if (evento.tipo !== "SERVIDOR_APAGADO") return;
+            deixarServidor(evento.servidorId, "info", (nome) => `O servidor ${nome} foi apagado pelo dono.`);
+        });
+    }, [euId, deixarServidor]);
 
     // som de entrada/saída na call em que você está (menos o seu próprio)
     useSonsDeVoz(voz, eu);
@@ -269,12 +301,21 @@ function Aplicacao() {
         );
     }, [servidor, canalPorServidor]);
 
+    // em tela estreita a lista de membros fica por cima do chat: se o canal mudar com ela aberta
+    // (canal apagado, troca de servidor), fecha, em vez de reabrir sozinha no canal seguinte
+    const canalAtualId = canalAtual?.id;
+    useEffect(() => {
+        if (window.matchMedia("(max-width: 1100px)").matches) setMembrosVisivel(false);
+    }, [canalAtualId]);
+
     const membros: MapaMembros = useMemo(
         () => new Map((servidor?.membros ?? []).map((m) => [m.usuario.id, m.usuario])),
         [servidor],
     );
 
     const souAdmin = !!eu && !!servidor?.membros.some((m) => m.usuario.id === eu.id && m.permissao === "ADMIN");
+    // o dono não sai do servidor (ele ficaria sem dono): no lugar de "sair", ele pode apagar
+    const souDono = !!eu && servidor?.dono.id === eu.id;
 
     // ---------- navegação ----------
 
@@ -339,11 +380,30 @@ function Aplicacao() {
 
     const idVoz = voz?.canal.id;
 
+    // o início da sala em que você está vem do servidor (é o mesmo pra todo mundo). Guardado na voz,
+    // continua valendo quando você vai pra outro servidor e a lista de canais de lá some
+    const inicioDaMinhaSala = voz && servidor?.id === voz.servidorId
+        ? servidor.canais.find((c) => c.id === voz.canal.id)?.inicioCall ?? null
+        : null;
+    useEffect(() => {
+        if (!inicioDaMinhaSala) return;
+        setVoz((v) => (v && v.canal.id === idVoz && v.inicioSala !== inicioDaMinhaSala ? { ...v, inicioSala: inicioDaMinhaSala } : v));
+    }, [inicioDaMinhaSala, idVoz]);
+
     // callbacks estáveis: o LiveKitRoom refaz a conexão quando eles mudam
     const aoDesconectar = useCallback((motivo?: DisconnectReason) => {
         // ignora o aviso da sala antiga quando você troca de sala
         setVoz((v) => (v && v.canal.id === idVoz ? null : v));
-        if (motivo !== undefined && motivo !== DisconnectReason.CLIENT_INITIATED) {
+        // saiu por conta própria (botão, trocou de sala, foi expulso do servidor): sem aviso
+        if (motivo === undefined || motivo === DisconnectReason.CLIENT_INITIATED) return;
+        if (motivo === DisconnectReason.ROOM_DELETED) {
+            // o back apaga a sala no LiveKit junto com o canal
+            toast.info("A sala de voz foi apagada.");
+        } else if (motivo === DisconnectReason.DUPLICATE_IDENTITY) {
+            toast.info("Você entrou nessa sala em outra aba ou aparelho.");
+        } else if (motivo === DisconnectReason.PARTICIPANT_REMOVED) {
+            toast.info("Você foi removido da sala.");
+        } else {
             toast.info("Você foi desconectado da sala.");
         }
     }, [idVoz, toast]);
@@ -403,21 +463,42 @@ function Aplicacao() {
         toast.sucesso("Servidor atualizado");
     }
 
-    // igual à regra do back: admin expulsa só membro comum (os outros admins e você ficam de fora).
-    // O dono sempre é ADMIN, mas fica protegido pelo id também, por garantia
-    function podeExpulsar(alvo: Usuario) {
+    // ícone novo: troca na barra e no servidor aberto na hora (o modal continua aberto, dá pra
+    // mexer no nome também). O UPDATE_SERVER chega pros outros
+    function aoTrocarIcone(atualizado: { id: string; iconeUrl: string | null }) {
+        const mudanca = { iconeUrl: atualizado.iconeUrl };
+        setServidores((lista) => lista && lista.map((s) => (s.id === atualizado.id ? atualizarResumo(s, mudanca) : s)));
+        setServidor((s) => (s && s.id === atualizado.id ? atualizarResumo(s, mudanca) : s));
+        toast.sucesso("Ícone do servidor atualizado");
+    }
+
+    // igual à regra do back: admin expulsa e bane só membro comum (os outros admins e você ficam
+    // de fora). O dono sempre é ADMIN, mas fica protegido pelo id também, por garantia
+    function podeModerar(alvo: Usuario) {
         if (!servidor || !eu || !souAdmin || alvo.id === eu.id || alvo.id === servidor.dono.id) return false;
         return servidor.membros.some((m) => m.usuario.id === alvo.id && m.permissao !== "ADMIN");
     }
 
     // o erro sobe pro modal mostrar; deu certo: some da lista na hora (o evento chega depois)
-    async function expulsar(usuario: Usuario) {
+    async function removerDoServidor(modo: ModoRemocao, usuario: Usuario) {
         if (!servidor) return;
         const idServidor = servidor.id;
-        await api.expulsarMembro(idServidor, usuario.id);
+        if (modo === "banir") await api.banirMembro(idServidor, usuario.id);
+        else await api.expulsarMembro(idServidor, usuario.id);
         setServidor((s) => (s && s.id === idServidor ? removerMembro(s, usuario.id) : s));
         setModal(null);
-        toast.sucesso(`Você expulsou ${usuario.nome} do servidor.`);
+        toast.sucesso(modo === "banir" ? `Você baniu ${usuario.nome} do servidor.` : `Você expulsou ${usuario.nome} do servidor.`);
+    }
+
+    // o erro sobe pro modal mostrar; deu certo: o servidor some na hora (o evento do gateway chega
+    // depois e não faz nada, porque o servidor já saiu da lista)
+    async function confirmarDeixar(modo: ModoDeixar) {
+        if (!servidor) return;
+        const idServidor = servidor.id;
+        if (modo === "apagar") await api.apagarServidor(idServidor);
+        else await api.sairDoServidor(idServidor);
+        setModal(null);
+        deixarServidor(idServidor, "sucesso", (nome) => (modo === "apagar" ? `Você apagou o servidor ${nome}.` : `Você saiu de ${nome}.`));
     }
 
     function aoTrocarFoto(atualizado: Usuario, removida: boolean) {
@@ -485,14 +566,23 @@ function Aplicacao() {
             { id: "convidar", grupo: "Ações", titulo: "Convidar pessoas", dica: servidor.nome, icone: <UserPlus size={16} />, acao: () => setModal({ tipo: "convidar" }) },
             { id: "novo-canal", grupo: "Ações", titulo: "Criar canal de texto", dica: servidor.nome, icone: <Hash size={16} />, acao: () => setModal({ tipo: "canal", tipoCanal: "TEXTO" }) },
             { id: "nova-sala", grupo: "Ações", titulo: "Criar sala de voz", dica: servidor.nome, icone: <Volume2 size={16} />, acao: () => setModal({ tipo: "canal", tipoCanal: "VOZ" }) },
-            { id: "editar-servidor", grupo: "Ações", titulo: "Editar servidor", dica: servidor.nome, icone: <Settings size={16} />, acao: () => setModal({ tipo: "editar-servidor" }) },
+            { id: "configuracoes", grupo: "Ações", titulo: "Configurações do servidor", dica: servidor.nome, icone: <Settings size={16} />, acao: () => setModal({ tipo: "configuracoes", aba: "geral" }) },
+            { id: "banimentos", grupo: "Ações", titulo: "Banimentos", dica: servidor.nome, icone: <Ban size={16} />, acao: () => setModal({ tipo: "configuracoes", aba: "banimentos" }) },
+        );
+    }
+    if (servidor) {
+        itensPaleta.push(
+            souDono
+                ? { id: "apagar-servidor", grupo: "Ações", titulo: "Apagar servidor", dica: servidor.nome, icone: <Trash2 size={16} />, acao: () => setModal({ tipo: "deixar", modo: "apagar" }) }
+                : { id: "sair-servidor", grupo: "Ações", titulo: "Sair do servidor", dica: servidor.nome, icone: <DoorOpen size={16} />, acao: () => setModal({ tipo: "deixar", modo: "sair" }) },
         );
     }
     itensPaleta.push(
         { id: "novo-servidor", grupo: "Ações", titulo: "Criar servidor", icone: <Plus size={16} />, acao: () => setModal({ tipo: "servidor", aba: "criar" }) },
         { id: "entrar-convite", grupo: "Ações", titulo: "Entrar com convite", icone: <Ticket size={16} />, acao: () => setModal({ tipo: "servidor", aba: "entrar" }) },
     );
-    if (servidor) {
+    // a lista de membros só aparece nos canais de texto (numa sala de voz o botão não faria nada)
+    if (servidor && canalAtual?.tipo === "TEXTO") {
         itensPaleta.push({
             id: "membros",
             grupo: "Ações",
@@ -602,8 +692,9 @@ function Aplicacao() {
                             membros={membros}
                             servidorId={servidorId}
                             onEditarFoto={() => setModal({ tipo: "foto" })}
-                            podeExpulsar={podeExpulsar}
-                            onExpulsar={(usuario) => setModal({ tipo: "expulsar", usuario })}
+                            podeModerar={podeModerar}
+                            onExpulsar={(usuario) => setModal({ tipo: "remover", modo: "expulsar", usuario })}
+                            onBanir={(usuario) => setModal({ tipo: "remover", modo: "banir", usuario })}
                         >
                             <div className="navegacao">
                                 <BarraServidores
@@ -627,7 +718,9 @@ function Aplicacao() {
                                     onApagarCanal={apagarCanal}
                                     onConvidar={() => setModal({ tipo: "convidar" })}
                                     onNovoCanal={(tipoCanal) => setModal({ tipo: "canal", tipoCanal })}
-                                    onEditarServidor={() => setModal({ tipo: "editar-servidor" })}
+                                    onConfiguracoes={() => setModal({ tipo: "configuracoes", aba: "geral" })}
+                                    souDono={souDono}
+                                    onSairServidor={() => setModal({ tipo: "deixar", modo: "sair" })}
                                     onAbrirChamada={abrirChamada}
                                     onSairChamada={sairDaVoz}
                                     onEditarFoto={() => setModal({ tipo: "foto" })}
@@ -641,8 +734,8 @@ function Aplicacao() {
 
                             {mostrarMembros && servidor && (
                                 <>
-                                    <div className="fundo-escuro so-sobreposto" onClick={() => setMembrosVisivel(false)} />
-                                    <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} />
+                                    <div className="fundo-escuro so-sobreposto" onClick={fecharMembros} />
+                                    <ListaMembros servidor={servidor} eu={eu} emChamada={emChamada} onFechar={fecharMembros} />
                                 </>
                             )}
 
@@ -660,16 +753,32 @@ function Aplicacao() {
                                     onCriado={aoCriarCanal}
                                 />
                             )}
-                            {modal?.tipo === "expulsar" && servidor && (
-                            <ExpulsarMembro
-                                usuario={modal.usuario}
-                                servidorNome={servidor.nome}
-                                onFechar={() => setModal(null)}
-                                onConfirmar={() => expulsar(modal.usuario)}
-                            />
-                        )}
-                        {modal?.tipo === "editar-servidor" && servidor && (
-                                <EditarServidor servidor={servidor} onFechar={() => setModal(null)} onSalvo={aoEditarServidor} />
+                            {modal?.tipo === "remover" && servidor && (
+                                <RemoverMembro
+                                    modo={modal.modo}
+                                    usuario={modal.usuario}
+                                    servidorNome={servidor.nome}
+                                    onFechar={() => setModal(null)}
+                                    onConfirmar={() => removerDoServidor(modal.modo, modal.usuario)}
+                                />
+                            )}
+                            {modal?.tipo === "deixar" && servidor && (
+                                <DeixarServidor
+                                    modo={modal.modo}
+                                    servidor={servidor}
+                                    onFechar={() => setModal(null)}
+                                    onConfirmar={() => confirmarDeixar(modal.modo)}
+                                />
+                            )}
+                            {modal?.tipo === "configuracoes" && servidor && (
+                                <ConfiguracoesServidor
+                                    servidor={servidor}
+                                    abaInicial={modal.aba}
+                                    onFechar={() => setModal(null)}
+                                    onSalvo={aoEditarServidor}
+                                    onIconeSalvo={aoTrocarIcone}
+                                    onApagar={souDono ? () => setModal({ tipo: "deixar", modo: "apagar" }) : undefined}
+                                />
                             )}
                             {modal?.tipo === "foto" && (
                                 <FotoPerfil eu={eu} onFechar={() => setModal(null)} onPronto={aoTrocarFoto} />

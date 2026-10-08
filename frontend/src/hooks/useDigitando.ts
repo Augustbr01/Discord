@@ -21,6 +21,15 @@ export function useDigitando(canalId: string, eu: Usuario, membros: MapaMembros)
         timers.current.clear();
 
         const parar = gateway.assinar((evento) => {
+            // a mensagem chegou: quem mandou parou de digitar (não espera os 5s pra sumir)
+            if (evento.tipo === "MENSAGEM_CRIADA" && evento.canalId === canalId) {
+                const autor = evento.mensagem.autor.id;
+                const timer = timers.current.get(autor);
+                if (timer) clearTimeout(timer);
+                timers.current.delete(autor);
+                setIds((lista) => (lista.includes(autor) ? lista.filter((x) => x !== autor) : lista));
+                return;
+            }
             if (evento.tipo !== "DIGITANDO" || evento.canalId !== canalId) return;
             if (evento.usuarioId === eu.id) return; // não mostra você mesmo
 

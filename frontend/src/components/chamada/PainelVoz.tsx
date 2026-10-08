@@ -29,7 +29,7 @@ export function PainelVoz({ voz, onAbrir, onSair }: Props) {
                     <strong>{status}</strong>
                     <span className="truncar">{voz.canal.nome} · {voz.servidorNome}</span>
                 </button>
-                <span className="painel-voz-tempo">{conectado ? cronometro(agora - voz.desde) : ""}</span>
+                <span className="painel-voz-tempo">{conectado ? cronometro(agora - (voz.inicioSala ? Date.parse(voz.inicioSala) : voz.desde)) : ""}</span>
                 <Dica texto="Desconectar">
                     <button className="botao-icone botao-icone-perigo" onClick={onSair} aria-label="Desconectar">
                         <PhoneOff size={17} />
@@ -46,15 +46,17 @@ export function PainelVoz({ voz, onAbrir, onSair }: Props) {
                     {camera.ligada ? <Video size={16} /> : <VideoOff size={16} />}
                     Câmera
                 </button>
-                <button
-                    className={`painel-voz-botao ${tela.ativa ? "ligado" : ""}`}
-                    onClick={tela.alternar}
-                    disabled={!conectado || tela.pendente || !tela.suportada}
-                    title={tela.suportada ? undefined : "Seu navegador não permite compartilhar a tela"}
-                >
-                    {tela.ativa ? <MonitorX size={16} /> : <MonitorUp size={16} />}
-                    {tela.ativa ? "Parar" : "Tela"}
-                </button>
+                {/* sem compartilhamento de tela no navegador (celular): a câmera fica com a linha toda */}
+                {tela.suportada && (
+                    <button
+                        className={`painel-voz-botao ${tela.ativa ? "ligado" : ""}`}
+                        onClick={tela.alternar}
+                        disabled={!conectado || tela.pendente}
+                    >
+                        {tela.ativa ? <MonitorX size={16} /> : <MonitorUp size={16} />}
+                        {tela.ativa ? "Parar" : "Tela"}
+                    </button>
+                )}
             </div>
         </div>
     );

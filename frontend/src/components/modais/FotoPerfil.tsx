@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Camera, Loader2 } from "lucide-react";
-import { api, ErroApi, LIMITE_AVATAR, mensagemDeErro, TIPOS_AVATAR, type Usuario } from "../../api";
-import { temFotoPropria } from "../../lib/util";
+import { api, ErroApi, mensagemDeErro, problemaNaImagem, TIPOS_AVATAR, type Usuario } from "../../api";
+import { telaDeToque, temFotoPropria } from "../../lib/util";
 import { Avatar } from "../ui/Avatar";
 import { Dialogo } from "../ui/Dialogo";
 
@@ -10,14 +10,6 @@ type Props = {
     onFechar: () => void;
     onPronto: (usuario: Usuario, removida: boolean) => void;
 };
-
-// o back confere tudo de novo (e o sharp vê se é imagem de verdade);
-// aqui é só pra avisar antes de mandar
-function problemaNoArquivo(arquivo: File) {
-    if (!TIPOS_AVATAR.includes(arquivo.type)) return "Use uma imagem PNG, JPG, WebP ou GIF.";
-    if (arquivo.size > LIMITE_AVATAR) return "A imagem deve ter no máximo 4 MB.";
-    return null;
-}
 
 export function FotoPerfil({ eu, onFechar, onPronto }: Props) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +31,7 @@ export function FotoPerfil({ eu, onFechar, onPronto }: Props) {
 
     function escolher(novo: File | undefined) {
         if (!novo) return;
-        const problema = problemaNoArquivo(novo);
+        const problema = problemaNaImagem(novo);
         setErro(problema);
         if (!problema) setArquivo(novo);
     }
@@ -111,7 +103,10 @@ export function FotoPerfil({ eu, onFechar, onPronto }: Props) {
                     >
                         {arquivo ? "Escolher outra" : "Escolher imagem"}
                     </button>
-                    <p className="foto-perfil-dica">PNG, JPG, WebP ou GIF (animado também), até 4 MB. Também dá pra arrastar a imagem até aqui.</p>
+                    <p className="foto-perfil-dica">
+                        PNG, JPG, WebP ou GIF (animado também), até 4 MB.
+                        {!telaDeToque && " Também dá pra arrastar a imagem até aqui."}
+                    </p>
 
                     <input
                         ref={inputRef}

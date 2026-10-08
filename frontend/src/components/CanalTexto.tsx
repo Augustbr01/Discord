@@ -5,7 +5,7 @@ import { usePerfil } from "../contexto/Perfil";
 import { useToast } from "../contexto/Toasts";
 import { useDigitando } from "../hooks/useDigitando";
 import { useMensagens, type MensagemLocal } from "../hooks/useMensagens";
-import { hora, imagensDoTexto, mesmoDia, partesTexto, quando, rotuloDia, soImagens, teclaAtalho } from "../lib/util";
+import { hora, imagensDoTexto, mesmoDia, partesTexto, quando, rotuloDia, soImagens, teclaAtalho, telaDeToque } from "../lib/util";
 import type { MapaMembros } from "../tipos";
 import { MidiasMensagem } from "./MidiasMensagem";
 import { Avatar } from "./ui/Avatar";
@@ -102,7 +102,8 @@ export function CanalTexto({ canal, eu, membros, membrosVisivel, onMembros, onBu
         }
     }, [itens.length]);
 
-    // a altura muda sem mensagem nova (imagem que terminou de carregar, mensagem editada):
+    // a altura muda sem mensagem nova (imagem que terminou de carregar, mensagem editada) ou a
+    // área do chat encolhe (teclado do celular abrindo, campo de texto crescendo):
     // quem estava no fim continua no fim
     useEffect(() => {
         const lista = listaRef.current;
@@ -112,6 +113,7 @@ export function CanalTexto({ canal, eu, membros, membrosVisivel, onMembros, onBu
             if (noFimRef.current) lista.scrollTop = lista.scrollHeight;
         });
         observador.observe(conteudo);
+        observador.observe(lista);
         return () => observador.disconnect();
     }, []);
 
@@ -237,6 +239,9 @@ export function CanalTexto({ canal, eu, membros, membrosVisivel, onMembros, onBu
                                     )}
                                     <article
                                         className={`mensagem ${inicioGrupo ? "mensagem-inicio" : ""} ${item.local ? `mensagem-${item.local.estado}` : ""} ${emEdicao ? "mensagem-em-edicao" : ""}`}
+                                        // tocar na sua mensagem foca ela, e o foco mostra editar/apagar
+                                        // (no celular não tem hover; o Safari nem sempre simula)
+                                        tabIndex={minha ? -1 : undefined}
                                     >
                                         {minha && !emEdicao && (
                                             <div className="mensagem-acoes">
@@ -397,7 +402,7 @@ function ConfirmarApagar({ item, onCancelar, onApagar }: ConfirmarProps) {
                     </div>
                 </div>
 
-                <p className="apagar-dica">Dica: Shift + clique na lixeira apaga sem perguntar.</p>
+                {!telaDeToque && <p className="apagar-dica">Dica: Shift + clique na lixeira apaga sem perguntar.</p>}
 
                 {erro && <p className="texto-erro">{erro}</p>}
 
@@ -515,6 +520,12 @@ function EditorMensagem({ inicial, onSalvar, onCancelar }: EditorProps) {
                     <>
                         <Loader2 size={12} className="girar" /> Salvando…
                     </>
+                ) : telaDeToque ? (
+                    // no celular não tem Esc: ficam só os botões
+                    <>
+                        <button onClick={onCancelar}>Cancelar</button> ·{" "}
+                        <button onClick={salvar} disabled={!texto.trim()}>Salvar</button>
+                    </>
                 ) : (
                     <>
                         esc para <button onClick={onCancelar}>cancelar</button> · enter para{" "}
@@ -549,7 +560,9 @@ function Compositor({ canalNome, desativado, onEnviar, onDigitar }: CompositorPr
         if (!conteudo || desativado) return;
         onEnviar(conteudo);
         setTexto("");
-        ref.current?.focus();
+        // no celular o foco já fica no campo (o botão não rouba); focar de novo reabriria
+        // o teclado de quem já tinha fechado
+        if (!telaDeToque) ref.current?.focus();
     }
 
     function aoTeclar(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -575,10 +588,19 @@ function Compositor({ canalNome, desativado, onEnviar, onDigitar }: CompositorPr
                     maxLength={LIMITE_MENSAGEM}
                     placeholder={desativado ? "Chat de texto indisponível" : `Conversar em #${canalNome}`}
                     disabled={desativado}
-                    autoFocus
+                    autoFocus={!telaDeToque}
+                    // a tecla Enter do teclado do celular vira "enviar"
+                    enterKeyHint="send"
                 />
                 {restante <= 40 && <span className={`compositor-limite ${restante <= 10 ? "quase" : ""}`}>{restante}</span>}
-                <button className="compositor-enviar" onClick={enviar} disabled={desativado || !texto.trim()} aria-label="Enviar">
+                <button
+                    className="compositor-enviar"
+                    onClick={enviar}
+                    // não tira o foco do campo: no celular o teclado fecharia e abriria de novo a cada envio
+                    onMouseDown={(e) => e.preventDefault()}
+                    disabled={desativado || !texto.trim()}
+                    aria-label="Enviar"
+                >
                     <SendHorizontal size={18} />
                 </button>
             </div>

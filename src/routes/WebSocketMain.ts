@@ -10,7 +10,7 @@ export const routeWebSocket : (FastifyPluginAsync) = async (fastify) => {
             return rep.code(400).send("acesso negado");
         }
     })
-
+                                            
     fastify.get("/gateway", {websocket: true}, async (socket,req) => {
         const desconectar = conectar(req.user.id,socket);
 

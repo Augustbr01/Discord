@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, Camera, UserMinus } from "lucide-react";
+import { Ban, CalendarDays, Camera, UserMinus } from "lucide-react";
 import type { Usuario } from "../api";
-import { avatarReal } from "../lib/util";
+import { avatarReal, dataLonga } from "../lib/util";
 import { Avatar } from "./ui/Avatar";
 
 type Props = {
@@ -14,31 +14,36 @@ type Props = {
     ancora: HTMLElement;
     onFechar: () => void;
     onEditarFoto: () => void;
-    // só vem quando você pode expulsar essa pessoa do servidor aberto
-    onExpulsar?: () => void;
+    // só vem quando você pode expulsar e banir essa pessoa do servidor aberto
+    moderacao?: { expulsar: () => void; banir: () => void };
 };
 
 // distância mínima das bordas da janela e do elemento clicado
 const MARGEM = 8;
 const VAO = 10;
+// até essa largura (celular) o cartão não cabe do lado de quem foi clicado: vira uma folha embaixo
+const LARGURA_FOLHA = 600;
 
-// "7 de outubro de 2026"
-function dataLonga(iso: string) {
-    return new Date(iso).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
-}
+// "folha" = preso embaixo, na largura da tela (o CSS posiciona)
+type Posicao = { left: number; top: number } | "folha";
 
 // cartão de perfil que abre ao clicar em alguém (membros, chat, salas de voz)
-export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto, onExpulsar }: Props) {
+export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto, moderacao }: Props) {
     const ref = useRef<HTMLDivElement>(null);
-    const [posicao, setPosicao] = useState<{ left: number; top: number } | null>(null);
+    const [posicao, setPosicao] = useState<Posicao | null>(null);
 
     // ao lado do que foi clicado: à direita se couber, senão à esquerda; sempre dentro da janela
-    useLayoutEffect(() => {
+    const posicionar = useCallback(() => {
         const el = ref.current;
         if (!el) return;
         // o elemento sumiu (mensagem apagada, lista recarregada): não tem do lado de quem abrir
         if (!ancora.isConnected) {
             onFechar();
+            return;
+        }
+        // no celular, do lado de quem foi clicado ele cobriria justamente a lista de onde abriu
+        if (window.innerWidth <= LARGURA_FOLHA) {
+            setPosicao("folha");
             return;
         }
         const alvo = ancora.getBoundingClientRect();
@@ -48,11 +53,16 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
         left = Math.min(Math.max(left, MARGEM), window.innerWidth - width - MARGEM);
         const top = Math.min(Math.max(alvo.top, MARGEM), window.innerHeight - height - MARGEM);
         setPosicao({ left, top });
-    }, [ancora, usuario, onFechar]);
+    }, [ancora, onFechar]);
 
-    // fecha com clique fora, Esc, rolagem ou mudança de tamanho da janela (o cartão é fixo e ficaria
-    // longe de quem abriu). Clicar no próprio elemento que abriu não conta: quem alterna é ele
+    useLayoutEffect(() => posicionar(), [posicionar, usuario]);
+
+    // fecha com clique fora ou Esc. Clicar no próprio elemento que abriu não conta: quem alterna é ele.
+    // Rolagem só acompanha quem abriu (o chat rola sozinho quando chega mensagem, e isso fechava o
+    // cartão); fecha se essa pessoa sair de vista. A janela mudar de largura fecha (o layout muda);
+    // mudar só de altura é o teclado do celular abrindo ou fechando, e aí só reposiciona
     useEffect(() => {
+        const largura = window.innerWidth;
         const aoClicar = (e: MouseEvent) => {
             const alvo = e.target as Node;
             if (ref.current?.contains(alvo) || ancora.contains(alvo)) return;
@@ -62,30 +72,41 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
             if (e.key === "Escape") onFechar();
         };
         const aoRolar = (e: Event) => {
-            if (!ref.current?.contains(e.target as Node)) onFechar();
+            // rolou dentro do cartão, ou é a folha do celular (que não fica presa a quem abriu)
+            if (ref.current?.contains(e.target as Node) || window.innerWidth <= LARGURA_FOLHA) return;
+            const alvo = ancora.getBoundingClientRect();
+            const area = e.target instanceof Element
+                ? e.target.getBoundingClientRect()
+                : { top: 0, bottom: window.innerHeight };
+            if (alvo.bottom < area.top || alvo.top > area.bottom) onFechar();
+            else posicionar();
+        };
+        const aoRedimensionar = () => {
+            if (window.innerWidth !== largura) onFechar();
+            else posicionar();
         };
         document.addEventListener("mousedown", aoClicar);
         document.addEventListener("keydown", aoTeclar);
         document.addEventListener("scroll", aoRolar, true);
-        window.addEventListener("resize", onFechar);
+        window.addEventListener("resize", aoRedimensionar);
         return () => {
             document.removeEventListener("mousedown", aoClicar);
             document.removeEventListener("keydown", aoTeclar);
             document.removeEventListener("scroll", aoRolar, true);
-            window.removeEventListener("resize", onFechar);
+            window.removeEventListener("resize", aoRedimensionar);
         };
-    }, [ancora, onFechar]);
+    }, [ancora, onFechar, posicionar]);
 
     const fundo = avatarReal(usuario.avatarUrl);
 
     return createPortal(
         <div
             ref={ref}
-            className="perfil"
+            className={`perfil ${posicao === "folha" ? "perfil-folha" : ""}`}
             role="dialog"
             aria-label={`Perfil de ${usuario.nome}`}
             // primeiro mede escondido, depois aparece já no lugar certo
-            style={posicao ?? { visibility: "hidden" }}
+            style={posicao === null ? { visibility: "hidden" } : posicao === "folha" ? undefined : posicao}
         >
             <div className="perfil-capa">
                 {/* a própria foto, desfocada, vira a capa */}
@@ -121,11 +142,17 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
                     </button>
                 )}
 
-                {onExpulsar && (
-                    <button className="botao botao-pequeno botao-largo botao-perigo-contorno" onClick={onExpulsar}>
-                        <UserMinus size={14} />
-                        Expulsar do servidor
-                    </button>
+                {moderacao && (
+                    <div className="perfil-moderacao">
+                        <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.expulsar}>
+                            <UserMinus size={14} />
+                            Expulsar
+                        </button>
+                        <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.banir}>
+                            <Ban size={14} />
+                            Banir
+                        </button>
+                    </div>
                 )}
             </div>
         </div>,

@@ -5,12 +5,17 @@ interface ParticipanteCall {
 
 
 const calls = new Map<string, Map<string,ParticipanteCall>>()
+const inicioCalls = new Map<string,Date>();
 
 export function entrouNaCall(canalId: string, usuarioId: string) {
     const set = calls.get(canalId) ?? new Map<string,ParticipanteCall>();
 
     if(!set.has(usuarioId)) {
         set.set(usuarioId,{usuarioId:usuarioId,mostrandoTela:false});
+    }
+
+    if(!inicioCalls.has(canalId)) {
+        inicioCalls.set(canalId,new Date());
     }
 
     calls.set(canalId,set);
@@ -21,7 +26,14 @@ export function saiuDaCall(canalId: string, usuarioId: string) {
 
     set?.delete(usuarioId);
 
-    if (set && set.size === 0) calls.delete(canalId);
+    if (set && set.size === 0) {
+        calls.delete(canalId);
+        inicioCalls.delete(canalId);
+    }
+}
+
+export function devolverTempoCall(canalId:string) {
+    return inicioCalls.get(canalId);
 }
 
 export function participantesDaCall(canalId: string) {
@@ -30,6 +42,7 @@ export function participantesDaCall(canalId: string) {
 
 export function limparCall(canalId: string) {
     calls.delete(canalId);
+    inicioCalls.delete(canalId);
 }
 
 export function mudarTela(canalId: string,usuarioId: string,mostrandoTela: boolean) {

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { receiver } from "../config/WebWookConfig";
 import {prisma} from "../../lib/prisma"
-import { entrouNaCall, mudarTela, saiuDaCall } from "../eventosCall";
+import { devolverTempoCall, entrouNaCall, mudarTela, saiuDaCall } from "../eventosCall";
 import { publicarParaServidor } from "./eventosConexao";
 import { statusTela } from "../interface/Evento";
 import { TrackSource } from "livekit-server-sdk";
@@ -29,7 +29,7 @@ export const routeHook : (FastifyPluginAsyncTypebox) = async (fastify) => {
 
         if(evento.event === "participant_joined") {
             entrouNaCall(canalId,usuarioId);
-            await publicarParaServidor(servidor?.id,{tipo:"ENTROU_NA_CALL",canalId:canalId,usuarioId:usuarioId})
+            await publicarParaServidor(servidor?.id,{tipo:"ENTROU_NA_CALL",canalId:canalId,usuarioId:usuarioId,inicioCall: devolverTempoCall(canalId)})
         }
 
         if(evento.event === "participant_left") {

@@ -69,7 +69,12 @@ export function rotuloDia(data: Date) {
     ontem.setDate(hoje.getDate() - 1);
     if (mesmoDia(data, hoje)) return "Hoje";
     if (mesmoDia(data, ontem)) return "Ontem";
-    return data.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+    return dataLonga(data);
+}
+
+// "7 de outubro de 2026" (sempre com dia, mês e ano)
+export function dataLonga(data: string | Date) {
+    return new Date(data).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
 }
 
 // "Hoje às 14:32", "Ontem às 09:10" ou "12/10/2026 14:32"
@@ -153,3 +158,7 @@ export function removerArmazenado(chave: string) {
 
 export const ehMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.userAgent);
 export const teclaAtalho = ehMac ? "⌘" : "Ctrl";
+
+// celular/tablet (toque, sem mouse). Aí um campo não deve se focar sozinho:
+// isso abre o teclado e cobre metade da tela só por abrir um canal
+export const telaDeToque = typeof window !== "undefined" && window.matchMedia("(hover: none) and (pointer: coarse)").matches;

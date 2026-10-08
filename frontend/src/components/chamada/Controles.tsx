@@ -11,7 +11,7 @@ import { Dispositivos } from "./Dispositivos";
 
 // barra de controles da chamada
 export function Controles({ onSair }: { onSair: () => void }) {
-    const { conectado, micLigado, micPendente, alternarMic, surdo, alternarSurdo, camera } = useControleVoz();
+    const { conectado, micLigado, micPendente, alternarMic, surdo, alternarSurdo, camera, tela } = useControleVoz();
 
     // atalho: M liga/desliga o microfone
     useEffect(() => {
@@ -47,7 +47,9 @@ export function Controles({ onSair }: { onSair: () => void }) {
                 {camera.ligada ? <Video size={20} /> : <VideoOff size={20} />}
             </Controle>
 
-            <ControleTela />
+            {/* celular não compartilha tela: o botão ficava desabilitado sem explicação
+                (a dica que explicava não aparece no toque) */}
+            {tela.suportada && <ControleTela />}
 
             <MenuNoControle dica="Dispositivos" icone={<Settings2 size={20} />}>
                 <Dispositivos />
@@ -72,10 +74,9 @@ function ControleTela() {
     const fechar = useCallback(() => setAberto(false), []);
     useCliqueFora(ref, aberto, fechar);
 
-    const dica = !tela.suportada
-        ? "Seu navegador não permite compartilhar a tela"
-        : tela.ativa ? "Parar de compartilhar" : "Compartilhar tela";
-    const desativado = !tela.suportada || !conectado || tela.pendente;
+    // só aparece quando o navegador compartilha tela (ver Controles)
+    const dica = tela.ativa ? "Parar de compartilhar" : "Compartilhar tela";
+    const desativado = !conectado || tela.pendente;
 
     return (
         <div className="controle-grupo" ref={ref}>
@@ -94,7 +95,6 @@ function ControleTela() {
                 <button
                     className={`controle controle-seta ${tela.ativa ? "controle-ligado" : ""} ${aberto ? "aberto" : ""}`}
                     onClick={() => setAberto((v) => !v)}
-                    disabled={!tela.suportada}
                     aria-label="Opções de compartilhamento"
                     aria-expanded={aberto}
                 >
