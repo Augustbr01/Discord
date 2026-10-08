@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { VideoTrack, type TrackReference } from "@livekit/components-react";
-import { LayoutGrid, Lightbulb, LightbulbOff, MonitorUp, PowerOff, Sparkles, SunDim, Tv, TvMinimalPlay, Volume1, Volume2, X } from "lucide-react";
+import { LayoutGrid, Lightbulb, LightbulbOff, Loader2, MonitorUp, PowerOff, Sparkles, SunDim, Tv, TvMinimalPlay, Volume1, Volume2, X } from "lucide-react";
 import type { Usuario } from "../../api";
 import { useControleSala } from "../../contexto/ControleSala";
 import { useYoutubeSala } from "../../contexto/YoutubeSala";
@@ -26,6 +26,8 @@ type Props = {
     aviso?: string | undefined;
     // painel: a coluna do lado da call; tablet: deitado, com as abas do lado (o do 3D)
     formato?: "painel" | "tablet";
+    // tablet: fechou no X e está esperando o mouse voltar pro jogo
+    voltando?: boolean;
     onFechar: () => void;
 };
 
@@ -87,7 +89,7 @@ const ABAS_TABLET: { id: AbaTablet; nome: string; descricao: string; icone: Reac
     { id: "youtube", nome: "YouTube", descricao: "Assistir junto, no mesmo ponto do vídeo", icone: <TvMinimalPlay size={20} /> },
 ];
 
-function Tablet({ membros, eu, telas, abaInicial = "controle", aviso, onFechar }: Props) {
+function Tablet({ membros, eu, telas, abaInicial = "controle", aviso, voltando = false, onFechar }: Props) {
     const { estado, enviar } = useControleSala();
     const [aba, setAba] = useState<AbaTablet>(abaInicial === "youtube" ? "youtube" : "tv");
     const nome = useNome(membros, eu);
@@ -123,9 +125,15 @@ function Tablet({ membros, eu, telas, abaInicial = "controle", aviso, onFechar }
                         <strong>{atual.nome}</strong>
                         <span>{atual.descricao}</span>
                     </div>
-                    <button className="botao-icone" onClick={onFechar} aria-label="Fechar">
-                        <X size={18} />
-                    </button>
+                    {voltando ? (
+                        <span className="tablet-voltando">
+                            <Loader2 size={14} className="girar" /> Voltando ao jogo…
+                        </span>
+                    ) : (
+                        <button className="botao-icone" onClick={onFechar} aria-label="Fechar e voltar ao jogo" title="Fechar e voltar ao jogo">
+                            <X size={18} />
+                        </button>
+                    )}
                 </header>
 
                 {aviso ? (

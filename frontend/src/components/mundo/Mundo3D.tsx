@@ -153,6 +153,24 @@ function Andar({
     const [salaAtual, setSalaAtual] = useState<string | null>(() => planta.salas.find((s) => dentro(s.ret, inicio))?.canalId ?? null);
     const [foco, setFoco] = useState<Interativo | null>(null);
     const [travado, setTravado] = useState(false);
+    // fechou o tablet no X: o clique deixa travar o mouse de novo, então já volta pro jogo.
+    // O tablet só some quando o mouse estiver travado (se o navegador ainda estiver na espera
+    // dele depois de soltar o mouse, o tablet espera aberto, mostrando "voltando ao jogo")
+    const [voltandoDoTablet, setVoltandoDoTablet] = useState(false);
+    useEffect(() => {
+        if (!voltandoDoTablet) return;
+        if (travado) {
+            setControleAberto(null);
+            setVoltandoDoTablet(false);
+            return;
+        }
+        // não deu (o navegador recusou de vez): fecha mesmo assim, e o clique volta pro jogo
+        const t = window.setTimeout(() => {
+            setControleAberto(null);
+            setVoltandoDoTablet(false);
+        }, 3200);
+        return () => window.clearTimeout(t);
+    }, [voltandoDoTablet, travado]);
     // quando o mouse foi solto (Esc): a barra do "clique para jogar" mostra a espera do navegador
     const [soltouEm, setSoltouEm] = useState<number | null>(null);
     const travadoAntes = useRef(travado);
@@ -469,6 +487,11 @@ function Andar({
         if (document.pointerLockElement) document.exitPointerLock();
     };
 
+    const fecharTabletPeloX = () => {
+        setVoltandoDoTablet(true);
+        pedido.current = { tipo: "travar" };
+    };
+
     const acoes = useRef({ e: () => {}, f: () => {}, t: () => {} });
     acoes.current.e = () => {
         if (foco?.tipo === "elevador") {
@@ -745,7 +768,8 @@ function Andar({
                                 : voz.hall ? "No hall não tem TV. Entre numa sala pra controlar a TV, o som e as luzes dela."
                                 : undefined
                             }
-                            onFechar={() => setControleAberto(null)}
+                            onFechar={fecharTabletPeloX}
+                            voltando={voltandoDoTablet}
                         />
                     </div>
                 </div>
