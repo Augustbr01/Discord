@@ -4,7 +4,7 @@
 // canal) só troca o conteúdo, que entra nele por um "túnel". Assim existe um contexto WebGL
 // só — criar e destruir contexto toda hora estressa a placa de vídeo (e o Chrome desliga a
 // aceleração se o processo da GPU travar algumas vezes).
-import { Suspense, useRef, type RefObject } from "react";
+import { Suspense, useMemo, useRef, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { Environment, Lightformer } from "@react-three/drei";
@@ -30,6 +30,9 @@ export type Pessoa = {
     participante?: Participant | undefined;
     camera?: Track | undefined;
     telas: Track[];
+    // a tela compartilhada dela só aparece pra você depois de clicar no selo
+    telaAberta: boolean;
+    telaMirada: boolean;
 };
 
 type Props = {
@@ -66,6 +69,9 @@ type Props = {
     onFoco: (it: Interativo | null) => void;
     // o que dá pra usar agora (fica com o contorno aceso)
     destaque: Interativo | null;
+    // selos/telas em cima de quem compartilha (pra mira) e de quem é o que está na mira
+    alvosTela: Map<string, THREE.Object3D>;
+    onMiraTela: (usuarioId: string | null) => void;
     onTravado: (travado: boolean) => void;
     onPostura: (postura: number) => void;
     // velocidade no chão, pro velocímetro
@@ -180,6 +186,9 @@ export function Cena(props: Props) {
                         participante={p.participante}
                         camera={p.camera}
                         telas={p.telas}
+                        telaAberta={p.telaAberta}
+                        telaMirada={p.telaMirada}
+                        alvosTela={props.alvosTela}
                         posicoes={props.posicoes}
                         solidos={planta.solidos}
                     />
@@ -199,7 +208,38 @@ export function Cena(props: Props) {
                 onPostura={props.onPostura}
                 velocidade={props.velocidade}
             />
+            <MiraTelas alvos={props.alvosTela} onMira={props.onMiraTela} />
             <AudioEspacial sala={props.sala} posicoes={props.posicoes} surdo={props.surdo} tv={props.somTV} proximidade={props.proximidade} />
         </>
     );
+}
+
+// o que está no centro da tela (a mira) entre os selos/telas em cima de quem compartilha
+const ALCANCE_MIRA_TELA = 20;
+function MiraTelas({ alvos, onMira }: { alvos: Map<string, THREE.Object3D>; onMira: (id: string | null) => void }) {
+    const raio = useMemo(() => {
+        const r = new THREE.Raycaster();
+        r.far = ALCANCE_MIRA_TELA;
+        return r;
+    }, []);
+    const centro = useMemo(() => new THREE.Vector2(0, 0), []);
+    const atual = useRef<string | null>(null);
+
+    useFrame(({ camera }) => {
+        raio.setFromCamera(centro, camera);
+        let melhor: string | null = null;
+        let menor = Infinity;
+        alvos.forEach((obj, id) => {
+            const acerto = raio.intersectObject(obj, true)[0];
+            if (acerto && acerto.distance < menor) {
+                menor = acerto.distance;
+                melhor = id;
+            }
+        });
+        if (melhor !== atual.current) {
+            atual.current = melhor;
+            onMira(melhor);
+        }
+    });
+    return null;
 }

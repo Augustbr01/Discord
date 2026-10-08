@@ -1,10 +1,11 @@
 // Mundo 3D: o servidor aberto vira um andar do prédio, as salas de voz viram salas
 // de verdade. Entrar pela porta = entrar na call; sair dela = sair da call.
 // Carregado sob demanda (o three.js só baixa quando alguém abre o 3D).
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type RefObject } from "react";
 import { ChevronsDown, ChevronsUp, Loader2, LogOut, MonitorUp, Settings, Tablet, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode, type RefObject } from "react";
 import { VideoTrack, useConnectionState, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
+import type { Object3D } from "three";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
 import { useChatSala } from "../../contexto/ChatSala";
 import { fonteDaTV, useControleSala } from "../../contexto/ControleSala";
@@ -107,7 +108,8 @@ export default function Mundo3D(props: Props) {
     );
 }
 
-type Dica = { tecla?: string; texto: string; carregando?: boolean };
+// acao/iconeToque: no toque, o botão da dica faz isso (em vez do E/F) e mostra esse ícone
+type Dica = { tecla?: string; texto: string; carregando?: boolean; acao?: () => void; iconeToque?: ReactNode };
 
 type PropsAndar = Props & {
     servidor: ServidorDetalhe;
@@ -274,12 +276,45 @@ function Andar({
         return { porPessoa, telasDaCall };
     }, [faixas]);
 
+    // telas compartilhadas em cima das pessoas: só aparecem (e só baixam o vídeo) pra você
+    // depois de mirar no selo "AO VIVO" e clicar. Clicar na tela aberta fecha
+    const [telasAbertas, setTelasAbertas] = useState<ReadonlySet<string>>(() => new Set());
+    const [miraTela, setMiraTela] = useState<string | null>(null);
+    const alvosTela = useRef(new Map<string, Object3D>()).current;
+    const alternarTela = useCallback((id: string) => {
+        setTelasAbertas((antes) => {
+            const novas = new Set(antes);
+            if (!novas.delete(id)) novas.add(id);
+            return novas;
+        });
+    }, []);
+    // parou de compartilhar: esquece (se compartilhar de novo, volta como selo)
+    useEffect(() => {
+        setTelasAbertas((antes) => {
+            const novas = new Set([...antes].filter((id) => (midia.porPessoa.get(id)?.telas.length ?? 0) > 0));
+            return novas.size === antes.size ? antes : novas;
+        });
+    }, [midia]);
+    const miraTelaRef = useRef(miraTela);
+    miraTelaRef.current = miraTela;
+    useEffect(() => {
+        // jogando (mouse travado), o clique vai pro que está na mira
+        const aoClicar = (e: MouseEvent) => {
+            if (e.button !== 0 || !document.pointerLockElement || !miraTelaRef.current) return;
+            alternarTela(miraTelaRef.current);
+        };
+        document.addEventListener("mousedown", aoClicar);
+        return () => document.removeEventListener("mousedown", aoClicar);
+    }, [alternarTela]);
+
     const pessoas: Pessoa[] = [];
     const andando = new Set(ids);
     const comMidia = (id: string) => ({
         participante: remotosPorId.get(id),
         camera: midia.porPessoa.get(id)?.camera,
         telas: midia.porPessoa.get(id)?.telas ?? [],
+        telaAberta: telasAbertas.has(id),
+        telaMirada: miraTela === id,
     });
     for (const id of ids) {
         const usuario = membros.get(id);
@@ -402,7 +437,16 @@ function Andar({
     );
     // as teclas que dá pra usar agora, lado a lado no canto da tela; os avisos sem tecla
     // (conectando, lugar ocupado) ficam no meio, em cima da barra da call
+    const dicaTela: Dica | null = miraTela
+        ? {
+            tecla: "Clique",
+            texto: `${telasAbertas.has(miraTela) ? "Fechar" : "Ver"} a tela de ${membros.get(miraTela)?.nome ?? "alguém"}`,
+            acao: () => alternarTela(miraTela),
+            iconeToque: <MonitorUp size={18} />,
+        }
+        : null;
     const dicas: Dica[] = [
+        ...(dicaTela ? [dicaTela] : []),
         ...(dicaE ? [dicaE] : []),
         ...(salaAtual && midia.telasDaCall.length > 0 ? [{ tecla: "F", texto: "Ver a tela compartilhada" }] : []),
         // no toque, levantar é o botão de pular
@@ -556,6 +600,8 @@ function Andar({
                     onSala={aoMudarSala}
                     onFoco={setFoco}
                     destaque={focoUsavel ? foco : null}
+                    alvosTela={alvosTela}
+                    onMiraTela={setMiraTela}
                     onTravado={setTravado}
                     velocidade={velocidade}
                 />
@@ -604,7 +650,7 @@ function Andar({
                         {botoes.map((dica) => (
                             <div key={`${dica.tecla}${dica.texto}`} className="mundo-dica">
                                 {toqueAtivo
-                                    ? <button className="mundo-dica-botao" onClick={() => (dica.tecla === "F" ? acoes.current.f() : acoes.current.e())}>{dica.tecla}</button>
+                                    ? <button className="mundo-dica-botao" onClick={dica.acao ?? (() => (dica.tecla === "F" ? acoes.current.f() : acoes.current.e()))}>{dica.iconeToque ?? dica.tecla}</button>
                                     : <kbd>{dica.tecla}</kbd>}
                                 <span>{dica.texto}</span>
                             </div>

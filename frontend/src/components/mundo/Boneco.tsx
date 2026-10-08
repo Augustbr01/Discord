@@ -1,5 +1,6 @@
 // Um boneco por pessoa: anda até a última posição que chegou pela rede (suavizado),
 // mostra o nome, a foto (ou a câmera, se estiver ligada) no rosto e as telas
+// (compartilhando, aparece um selo em cima da cabeça; a tela só abre pra quem clicar nele)
 // compartilhadas flutuando em cima da cabeça. Pula, agacha, desliza, senta e deita
 // (quadril e joelho de cada perna mudam de ângulo conforme a postura).
 import { useEffect, useMemo, useRef } from "react";
@@ -77,13 +78,19 @@ type Props = {
     participante?: Participant | undefined;
     camera?: Track | undefined;
     telas: Track[];
+    // você clicou no selo e quer ver a tela desta pessoa (só carrega o vídeo aí)
+    telaAberta: boolean;
+    // a mira está no selo / na tela desta pessoa
+    telaMirada: boolean;
+    // o selo (ou a tela aberta) de cada pessoa, pra mira achar onde clicou
+    alvosTela: Map<string, THREE.Object3D>;
     // posição atual de cada boneco, pro áudio espacial saber de onde vem a voz
     posicoes: Map<string, Ponto>;
     // o chão de verdade (degraus, móveis): a sombra fica nele (não sobe junto no pulo)
     solidos: Solido[];
 };
 
-export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes, solidos }: Props) {
+export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAberta, telaMirada, alvosTela, posicoes, solidos }: Props) {
     const raiz = useRef<THREE.Group>(null);
     const corpo = useRef<THREE.Group>(null);
     const tronco = useRef<THREE.Group>(null);
@@ -120,6 +127,17 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
     useEffect(() => () => {
         posicoes.delete(usuario.id);
     }, [posicoes, usuario.id]);
+
+    // compartilhando: o selo (ou a tela) entra na lista do que a mira pode clicar
+    const compartilhando = telas.length > 0;
+    useEffect(() => {
+        const g = grupoTelas.current;
+        if (!compartilhando || !g) return;
+        alvosTela.set(usuario.id, g);
+        return () => {
+            if (alvosTela.get(usuario.id) === g) alvosTela.delete(usuario.id);
+        };
+    }, [compartilhando, alvosTela, usuario.id]);
 
     useFrame(({ camera: olho }, delta) => {
         const alvo = lerAlvo();
@@ -310,25 +328,56 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, posicoes
                 <spriteMaterial map={textoCracha.textura} transparent depthWrite={false} toneMapped={false} />
             </sprite>
 
-            {telas.length > 0 && (
+            {compartilhando && (
                 <group ref={grupoTelas} position={[0, 2.22, 0]}>
-                    {telas.map((t, i) => (
-                        <PainelTela key={t.sid ?? i} track={t} x={(i - (telas.length - 1) / 2) * (LARGURA_TELA + 0.12)} />
-                    ))}
+                    {telaAberta
+                        ? telas.map((t, i) => (
+                            <PainelTela key={t.sid ?? i} track={t} x={(i - (telas.length - 1) / 2) * (LARGURA_TELA + 0.12)} mirada={telaMirada} />
+                        ))
+                        : <SeloTela mirado={telaMirada} />}
                 </group>
             )}
         </group>
     );
 }
 
-function PainelTela({ track, x }: { track: Track; x: number }) {
+// "AO VIVO · Ver a tela" em cima de quem está compartilhando; com a mira em cima, acende
+let texturasSelo: { normal: ReturnType<typeof texturaTexto>; mirado: ReturnType<typeof texturaTexto> } | null = null;
+function selo() {
+    texturasSelo ??= {
+        normal: texturaTexto(
+            [{ texto: "● AO VIVO", tamanho: 30, cor: "#f87171", peso: 700 }, { texto: "Ver a tela", tamanho: 42, peso: 600 }],
+            { largura: 340, altura: 150, fundo: "rgba(15, 15, 17, 0.88)", raio: 30 },
+        ),
+        mirado: texturaTexto(
+            [{ texto: "● AO VIVO", tamanho: 30, cor: "#dc2626", peso: 700 }, { texto: "Ver a tela", tamanho: 42, cor: "#111113", peso: 700 }],
+            { largura: 340, altura: 150, fundo: "#f6f6f7", raio: 30 },
+        ),
+    };
+    return texturasSelo;
+}
+
+const ALTURA_SELO = 0.28;
+
+function SeloTela({ mirado }: { mirado: boolean }) {
+    const t = mirado ? selo().mirado : selo().normal;
+    const escala = mirado ? 1.12 : 1;
+    return (
+        <sprite position={[0, ALTURA_SELO / 2 + 0.04, 0]} scale={[ALTURA_SELO * t.aspecto * escala, ALTURA_SELO * escala, 1]}>
+            <spriteMaterial map={t.textura} transparent depthWrite={false} toneMapped={false} />
+        </sprite>
+    );
+}
+
+function PainelTela({ track, x, mirada }: { track: Track; x: number; mirada: boolean }) {
     const video = useTexturaVideo(track, 1280, 720);
     if (!video) return null;
     const altura = LARGURA_TELA / video.aspecto;
     return (
         <group position={[x, altura / 2, 0]}>
+            {/* moldura: acende com a mira em cima (clicar fecha) */}
             <mesh geometry={PLANO} position={[0, 0, -0.005]} scale={[LARGURA_TELA + 0.06, altura + 0.06, 1]}>
-                <meshBasicMaterial color="#0b0b0c" />
+                <meshBasicMaterial color={mirada ? "#f6f6f7" : "#0b0b0c"} toneMapped={false} />
             </mesh>
             <mesh geometry={PLANO} scale={[LARGURA_TELA, altura, 1]}>
                 <meshBasicMaterial map={video.textura} toneMapped={false} />
