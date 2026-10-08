@@ -15,6 +15,7 @@ import type { EstadoLed } from "../../tipos";
 import { AudioEspacial, type SomDaTV } from "./AudioEspacial";
 import { Boneco } from "./Boneco";
 import { useConfigMundo } from "./config";
+import { Destaque } from "./Destaque";
 import { Elevador } from "./Elevador";
 import { Hitboxes } from "./Hitboxes";
 import { Jogador, type ControleToque, type PedidoJogador } from "./Jogador";
@@ -63,6 +64,8 @@ type Props = {
     somTV: SomDaTV | null;
     onSala: (id: string | null) => void;
     onFoco: (it: Interativo | null) => void;
+    // o que dá pra usar agora (fica com o contorno aceso)
+    destaque: Interativo | null;
     onTravado: (travado: boolean) => void;
     onPostura: (postura: number) => void;
     // velocidade no chão, pro velocímetro
@@ -168,6 +171,7 @@ export function Cena(props: Props) {
                 />
                 <Elevador planta={planta} andar={props.andar} aberta={props.portaAberta} />
                 {mostrarHitbox && <Hitboxes solidos={planta.solidos} />}
+                <Destaque planta={planta} interativo={props.destaque} pose={pose} />
                 {props.pessoas.map((p) => (
                     <Boneco
                         key={p.usuario.id}

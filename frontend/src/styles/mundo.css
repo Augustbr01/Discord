@@ -142,11 +142,43 @@
     margin: 0 2px;
 }
 
-.mundo-dica {
+/* avisos sem tecla (conectando, lugar ocupado): no meio, em cima da barra da call */
+.mundo-avisos {
     position: absolute;
     left: 50%;
     bottom: 96px;
     translate: -50% 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+/* as teclas que dá pra usar agora (E, F, Espaço...): no canto de baixo à direita, lado a lado */
+.mundo-dicas {
+    position: absolute;
+    right: 16px;
+    bottom: 24px;
+    max-width: calc(100% - 32px);
+    display: flex;
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* tela estreita: a barra da call (no meio, embaixo) chega no canto, então sobe */
+@media (max-width: 900px) {
+    .mundo-dicas {
+        bottom: 88px;
+    }
+}
+
+/* no toque, fica à esquerda da coluna de botões (pular, agachar...) */
+.mundo-dicas.toque {
+    right: 86px;
+}
+
+.mundo-dica {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -182,22 +214,6 @@
     min-width: 40px;
     height: 40px;
     border-radius: 50%;
-}
-
-/* "Espaço — Levantar" quando você está sentado: acima da dica principal */
-.mundo-dica-secundaria {
-    bottom: 146px;
-    opacity: 0.85;
-}
-
-.mundo-dica-secundaria.sozinha {
-    bottom: 96px;
-}
-
-.mundo-dica-secundaria kbd {
-    min-width: auto;
-    padding: 0 8px;
-    font-size: 12px;
 }
 
 /* ---------- celular: joystick e arrastar pra olhar ---------- */

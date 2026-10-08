@@ -382,7 +382,8 @@ function Andar({
     // ---------- teclas E e F ----------
 
     const noCanal = salaAtual ? canais.get(salaAtual) : undefined;
-    const dica: Dica | null =
+    // o que o E faz agora (o que está na mira/perto ganha de entrar na call)
+    const dicaE: Dica | null =
         foco?.tipo === "elevador" ? { tecla: "E", texto: "Escolher andar" }
         : foco?.tipo === "texto" ? { tecla: "E", texto: `Abrir #${canais.get(foco.canalId ?? "")?.nome ?? ""}` }
         : foco?.tipo === "tablet" && foco.canalId === vozNoAndar
@@ -392,8 +393,23 @@ function Andar({
             ? ocupados.has(foco.assentoId ?? "") ? { texto: "Lugar ocupado" } : { tecla: "E", texto: "Sentar" }
         : conectando ? { texto: tentandoDeNovo ? "Sem conexão com a call · tentando de novo…" : "Conectando à call…", carregando: true }
         : salaAtual && vozNoAndar !== salaAtual ? { tecla: "E", texto: "Entrar na call" }
-        : salaAtual && midia.telasDaCall.length > 0 ? { tecla: "F", texto: "Ver a tela compartilhada" }
         : null;
+    // o que está na mira/perto e dá pra usar com o E: fica com o contorno aceso
+    const focoUsavel = !!foco && (
+        foco.tipo === "elevador" || foco.tipo === "texto"
+        || ((foco.tipo === "tablet" || foco.tipo === "chat") && foco.canalId === vozNoAndar)
+        || (foco.tipo === "assento" && !ocupados.has(foco.assentoId ?? ""))
+    );
+    // as teclas que dá pra usar agora, lado a lado no canto da tela; os avisos sem tecla
+    // (conectando, lugar ocupado) ficam no meio, em cima da barra da call
+    const dicas: Dica[] = [
+        ...(dicaE ? [dicaE] : []),
+        ...(salaAtual && midia.telasDaCall.length > 0 ? [{ tecla: "F", texto: "Ver a tela compartilhada" }] : []),
+        // no toque, levantar é o botão de pular
+        ...(postura === POSTURA.SENTADO && !toqueAtivo ? [{ tecla: "Espaço", texto: "Levantar" }] : []),
+    ];
+    const botoes = dicas.filter((d) => d.tecla);
+    const avisos = dicas.filter((d) => !d.tecla);
 
     const soltarMouse = () => {
         if (document.pointerLockElement) document.exitPointerLock();
@@ -539,6 +555,7 @@ function Andar({
                     onPostura={setPostura}
                     onSala={aoMudarSala}
                     onFoco={setFoco}
+                    destaque={focoUsavel ? foco : null}
                     onTravado={setTravado}
                     velocidade={velocidade}
                 />
@@ -571,20 +588,27 @@ function Andar({
                     </div>
                 )}
 
-                {dica && !controleAberto && (
-                    <div className="mundo-dica">
-                        {dica.tecla && (toqueAtivo
-                            ? <button className="mundo-dica-botao" onClick={() => (dica.tecla === "F" ? acoes.current.f() : acoes.current.e())}>{dica.tecla}</button>
-                            : <kbd>{dica.tecla}</kbd>)}
-                        {dica.carregando && <Loader2 size={14} className="girar" />}
-                        <span>{dica.texto}</span>
+                {avisos.length > 0 && !controleAberto && (
+                    <div className="mundo-avisos">
+                        {avisos.map((aviso) => (
+                            <div key={aviso.texto} className="mundo-dica">
+                                {aviso.carregando && <Loader2 size={14} className="girar" />}
+                                <span>{aviso.texto}</span>
+                            </div>
+                        ))}
                     </div>
                 )}
 
-                {postura === POSTURA.SENTADO && !toqueAtivo && (
-                    <div className={`mundo-dica mundo-dica-secundaria ${dica ? "" : "sozinha"}`}>
-                        <kbd>Espaço</kbd>
-                        <span>Levantar</span>
+                {botoes.length > 0 && !controleAberto && (
+                    <div className={`mundo-dicas ${toqueAtivo ? "toque" : ""}`}>
+                        {botoes.map((dica) => (
+                            <div key={`${dica.tecla}${dica.texto}`} className="mundo-dica">
+                                {toqueAtivo
+                                    ? <button className="mundo-dica-botao" onClick={() => (dica.tecla === "F" ? acoes.current.f() : acoes.current.e())}>{dica.tecla}</button>
+                                    : <kbd>{dica.tecla}</kbd>}
+                                <span>{dica.texto}</span>
+                            </div>
+                        ))}
                     </div>
                 )}
 
