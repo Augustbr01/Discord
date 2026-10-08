@@ -52,6 +52,9 @@ const SENSIBILIDADE_TOQUE = 0.005;
 // apertar uma destas com o mouse solto já volta pro jogo
 const TECLAS_DE_ANDAR = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 const LIMITE_OLHAR = Math.PI / 2 - 0.02;
+// travar o mouse recusado (a espera do Chrome depois do Esc): tenta de novo a cada tanto, até desistir
+const INTERVALO_TRAVAR = 200;
+const JANELA_TRAVAR = 3000;
 // o quanto a mira pode passar longe do centro do tablet e ainda contar
 const RAIO_MIRA_TABLET = 0.28;
 
@@ -141,16 +144,38 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         const area = canvas.parentElement ?? canvas;
         const travado = () => document.pointerLockElement === canvas;
 
-        const travar = () => {
-            // entrada bruta: o movimento do mouse sem a aceleração do sistema (nem todo navegador tem)
-            const bruta = lerConfig().entradaBruta;
-            const simples = () => Promise.resolve(canvas.requestPointerLock()).catch(() => {});
+        // O Chrome não deixa travar de novo logo depois do Esc (~1 s): o clique nessa espera é
+        // recusado. Em vez de perder o clique, tenta de novo sozinho até dar (o clique continua
+        // valendo como gesto por alguns segundos)
+        let tentativa: number | undefined;
+        let desistirEm = 0;
+        const pedir = (bruta: boolean) => {
+            if (travado() || paradoRef.current) return;
+            let pedido: Promise<void> | void;
             try {
-                const pedidoTrava = bruta ? canvas.requestPointerLock({ unadjustedMovement: true }) : canvas.requestPointerLock();
-                Promise.resolve(pedidoTrava).catch(() => (bruta ? simples() : undefined));
-            } catch {
-                if (bruta) simples();
+                pedido = bruta ? canvas.requestPointerLock({ unadjustedMovement: true }) : canvas.requestPointerLock();
+            } catch (erro) {
+                falhou(erro, bruta);
+                return;
             }
+            Promise.resolve(pedido).catch((erro: unknown) => falhou(erro, bruta));
+        };
+        const falhou = (erro: unknown, bruta: boolean) => {
+            // navegador sem entrada bruta: vai sem
+            const nome = (erro as Error | undefined)?.name;
+            if (bruta && (nome === "NotSupportedError" || nome === "TypeError")) {
+                pedir(false);
+                return;
+            }
+            if (performance.now() > desistirEm) return;
+            window.clearTimeout(tentativa);
+            tentativa = window.setTimeout(() => pedir(bruta), INTERVALO_TRAVAR);
+        };
+        const travar = () => {
+            window.clearTimeout(tentativa);
+            desistirEm = performance.now() + JANELA_TRAVAR;
+            // entrada bruta: o movimento do mouse sem a aceleração do sistema (nem todo navegador tem)
+            pedir(lerConfig().entradaBruta);
         };
 
         travarMouse.current = () => {
@@ -244,6 +269,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         window.addEventListener("blur", aoSairDaJanela);
         window.addEventListener("beforeunload", aoSair);
         return () => {
+            window.clearTimeout(tentativa);
             window.removeEventListener("beforeunload", aoSair);
             area.removeEventListener("click", aoClicar);
             document.removeEventListener("wheel", aoRodar);
