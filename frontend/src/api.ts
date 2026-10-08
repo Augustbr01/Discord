@@ -138,6 +138,11 @@ export const api = {
         chamar<void>("/servidor/banir", post({ servidorId, membroId })),
     desbanirMembro: (servidorId: string, membroId: string) =>
         chamar<void>("/servidor/desbanir", post({ servidorId, membroId })),
+    // só admin, e nunca no dono; o back avisa o servidor com MEMBROS (acao PROMOVIDO / REBAIXADO)
+    promoverMembro: (servidorId: string, membroId: string) =>
+        chamar<void>("/servidor/promover", post({ servidorId, membroId })),
+    rebaixarMembro: (servidorId: string, membroId: string) =>
+        chamar<void>("/servidor/rebaixar", post({ servidorId, membroId })),
     // só admin; o banimento mais recente primeiro
     listarBanidos: async (servidorId: string): Promise<Banimento[]> => {
         const lista = await chamar<Partial<Banimento>[]>(`/servidor/banidos/${servidorId}`);

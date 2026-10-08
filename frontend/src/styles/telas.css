@@ -541,6 +541,11 @@
     gap: 8px;
 }
 
+/* dar ou tirar admin: a linha toda, acima de expulsar e banir */
+.perfil-moderacao-cargo {
+    grid-column: 1 / -1;
+}
+
 /* ---------- configurações do servidor: ícone ---------- */
 
 .icone-editavel {

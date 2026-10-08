@@ -17,6 +17,11 @@ type Props = {
     // trocou de servidor: o cartão aberto era de lá, então fecha
     servidorId: string | null;
     onEditarFoto: () => void;
+    // dono, admin ou nada no servidor aberto
+    papelDe: (usuario: Usuario) => "dono" | "admin" | null;
+    // de quem você pode dar ou tirar admin, e o que fazer quando pedir (o cartão espera a resposta)
+    podeMudarCargo: (usuario: Usuario) => boolean;
+    onMudarCargo: (usuario: Usuario, admin: boolean) => Promise<void>;
     // quem você pode expulsar ou banir do servidor aberto, e o que fazer quando pedir
     podeModerar: (usuario: Usuario) => boolean;
     onExpulsar: (usuario: Usuario) => void;
@@ -26,7 +31,8 @@ type Props = {
 
 type Aberto = { usuario: Usuario; ancora: HTMLElement };
 
-export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeModerar, onExpulsar, onBanir, children }: Props) {
+export function PerfilProvider(props: Props) {
+    const { eu, membros, servidorId, onEditarFoto, papelDe, podeMudarCargo, onMudarCargo, podeModerar, onExpulsar, onBanir, children } = props;
     const [aberto, setAberto] = useState<Aberto | null>(null);
     const fechar = useCallback(() => setAberto(null), []);
 
@@ -42,6 +48,7 @@ export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeMode
     // quem abriu passou o que tinha na mão (ex.: o autor de uma mensagem antiga);
     // se a pessoa é membro, os dados do servidor são os mais atuais
     const usuario = aberto ? (membros.get(aberto.usuario.id) ?? aberto.usuario) : null;
+    const papel = usuario ? papelDe(usuario) : null;
 
     return (
         <Ctx.Provider value={valor}>
@@ -57,6 +64,12 @@ export function PerfilProvider({ eu, membros, servidorId, onEditarFoto, podeMode
                         fechar();
                         onEditarFoto();
                     }}
+                    papel={papel}
+                    cargo={
+                        podeMudarCargo(usuario)
+                            ? { admin: papel === "admin", mudar: () => onMudarCargo(usuario, papel !== "admin") }
+                            : undefined
+                    }
                     moderacao={
                         podeModerar(usuario)
                             ? {

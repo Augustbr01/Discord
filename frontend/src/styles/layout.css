@@ -694,13 +694,14 @@
     font-variant-numeric: tabular-nums;
 }
 
-.membros-grupo + .membros-grupo {
-    margin-top: 18px;
-}
-
-.membros-grupo > .rotulo {
+.membros-titulo {
     display: block;
     padding: 4px 8px 6px;
+}
+
+/* o título do segundo grupo (membros) se afasta do fim do primeiro */
+.membro + .membros-titulo {
+    margin-top: 18px;
 }
 
 /* a linha inteira é um botão: abre o perfil */

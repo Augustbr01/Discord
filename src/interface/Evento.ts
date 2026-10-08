@@ -26,9 +26,16 @@ export enum statusTela {
 
 export enum AcaoUsuario {
     EXPULSO = "EXPULSO",
+    PROMOVIDO = "PROMOVIDO",
+    REBAIXADO = "REBAIXADO",
     BANIDO = "BANIDO",
     ENTROU = "ENTROU",
     SAIU = "SAIU"
+}
+
+export enum Status {
+    ONLINE = "ONLINE",
+    OFFLINE = "OFFLINE"
 }
 
 export type Evento =
@@ -37,6 +44,7 @@ export type Evento =
     | { tipo: "ENTROU_NA_CALL"; canalId: string; usuarioId: string;inicioCall? : Date | undefined}
     | { tipo: "SAIU_DA_CALL"; canalId: string; usuarioId: string }
     | { tipo: "MENSAGEM_CRIADA";servidorId: string;canalId: string; mensagem: Mensagem }
+    | {tipo: "PRESENCA";usuarioId: string,status:Status}
     | {tipo: "MENSAGEM_EDITADA";servidorId: string; canalId: string; mensagem: Mensagem}
     | {tipo: "MENSAGEM_DELETADA";servidorId: string;canalId: string; mensagem: MensagemDeletada}                                    
     | { tipo: "CANAL_CRIADO"; servidorId: string ;canal: Canal }

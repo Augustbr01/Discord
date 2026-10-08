@@ -11,7 +11,7 @@ import { ControleVozProvider } from "./contexto/ControleVoz";
 import { FocoChamadaProvider } from "./contexto/FocoChamada";
 import { PerfilProvider } from "./contexto/Perfil";
 import { ToastProvider, useToast } from "./contexto/Toasts";
-import { atualizarResumo, removerMembro, useServidor } from "./hooks/useServidor";
+import { atualizarResumo, definirPermissao, removerMembro, useServidor } from "./hooks/useServidor";
 import { useSonsDeVoz } from "./hooks/useSonsDeVoz";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
@@ -70,6 +70,9 @@ type ModalAberto =
     | { tipo: "remover"; modo: ModoRemocao; usuario: Usuario }
     | { tipo: "deixar"; modo: ModoDeixar }
     | null;
+
+// modais que só admin usa: quem perde o admin com um deles aberto fica sem ele
+const SO_ADMIN = new Set<NonNullable<ModalAberto>["tipo"]>(["convidar", "canal", "configuracoes", "remover"]);
 
 // quem abre /convite/<id> sem estar logado passa pelo login e volta pra "/",
 // então o id fica guardado até dar pra usar. Fica no localStorage, que vale pra todas
@@ -212,12 +215,25 @@ function Aplicacao() {
     }, [toast]);
 
     // você saiu de um servidor (por outra aba ou aparelho), foi expulso ou banido.
-    // Você entrou num: aparece na barra das suas outras abas
+    // Você entrou num: aparece na barra das suas outras abas. Virou admin ou deixou de ser: avisa
+    // (os menus de admin aparecem ou somem sozinhos, pela lista de membros)
     useEffect(() => {
         if (!euId) return;
         return gateway.assinar((evento) => {
             if (evento.tipo !== "MEMBROS" || evento.usuarioId !== euId) return;
             const daqui = evento.servidorId;
+            if (evento.acao === "PROMOVIDO" || evento.acao === "REBAIXADO") {
+                const nome = (servidoresRef.current ?? []).find((s) => s.id === daqui)?.nome;
+                if (!nome) return;
+                if (evento.acao === "PROMOVIDO") {
+                    toast.info(`Agora você é admin de ${nome}.`);
+                    return;
+                }
+                toast.info(`Você não é mais admin de ${nome}.`);
+                // estava no meio de algo que só admin faz aqui: o back ia recusar, então fecha
+                if (servidorIdRef.current === daqui) setModal((m) => (m && SO_ADMIN.has(m.tipo) ? null : m));
+                return;
+            }
             // você entrou num servidor: nesta aba já aparece pela resposta do convite; numas outras
             // abas ou aparelhos ele ainda não está na barra, então busca a lista de novo
             if (evento.acao === "ENTROU") {
@@ -227,7 +243,7 @@ function Aplicacao() {
             if (evento.acao === "SAIU") deixarServidor(daqui, "info", (nome) => `Você saiu de ${nome}.`);
             else deixarServidor(daqui, "info", (nome) => `Um admin te ${evento.acao === "BANIDO" ? "baniu" : "removeu"} de ${nome}.`);
         });
-    }, [euId, deixarServidor]);
+    }, [euId, deixarServidor, toast]);
 
     // o dono apagou um servidor em que você está
     useEffect(() => {
@@ -479,6 +495,34 @@ function Aplicacao() {
         return servidor.membros.some((m) => m.usuario.id === alvo.id && m.permissao !== "ADMIN");
     }
 
+    function papelDe(alvo: Usuario): "dono" | "admin" | null {
+        if (!servidor) return null;
+        if (alvo.id === servidor.dono.id) return "dono";
+        return servidor.membros.some((m) => m.usuario.id === alvo.id && m.permissao === "ADMIN") ? "admin" : null;
+    }
+
+    // igual à regra do back: qualquer admin dá ou tira admin de quem está no servidor, menos do
+    // dono. Você mesmo também fica de fora (tirar o próprio admin por engano não tem volta)
+    function podeMudarCargo(alvo: Usuario) {
+        if (!servidor || !eu || !souAdmin || alvo.id === eu.id || alvo.id === servidor.dono.id) return false;
+        return servidor.membros.some((m) => m.usuario.id === alvo.id);
+    }
+
+    // deu certo: muda de grupo na hora (o evento chega depois e não muda nada); deu errado: avisa
+    async function mudarCargo(usuario: Usuario, admin: boolean) {
+        if (!servidor) return;
+        const idServidor = servidor.id;
+        try {
+            if (admin) await api.promoverMembro(idServidor, usuario.id);
+            else await api.rebaixarMembro(idServidor, usuario.id);
+        } catch (err) {
+            toast.erro(mensagemDeErro(err));
+            return;
+        }
+        setServidor((s) => (s && s.id === idServidor ? definirPermissao(s, usuario.id, admin ? "ADMIN" : "MEMBRO") : s));
+        toast.sucesso(admin ? `${usuario.nome} agora é admin.` : `${usuario.nome} não é mais admin.`);
+    }
+
     // o erro sobe pro modal mostrar; deu certo: some da lista na hora (o evento chega depois)
     async function removerDoServidor(modo: ModoRemocao, usuario: Usuario) {
         if (!servidor) return;
@@ -692,6 +736,9 @@ function Aplicacao() {
                             membros={membros}
                             servidorId={servidorId}
                             onEditarFoto={() => setModal({ tipo: "foto" })}
+                            papelDe={papelDe}
+                            podeMudarCargo={podeMudarCargo}
+                            onMudarCargo={mudarCargo}
                             podeModerar={podeModerar}
                             onExpulsar={(usuario) => setModal({ tipo: "remover", modo: "expulsar", usuario })}
                             onBanir={(usuario) => setModal({ tipo: "remover", modo: "banir", usuario })}

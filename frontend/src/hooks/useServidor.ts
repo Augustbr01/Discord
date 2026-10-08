@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ServidorDetalhe, type ServidorResumo } from "../api";
+import { api, type Permissao, type ServidorDetalhe, type ServidorResumo } from "../api";
 import { gateway } from "../lib/gateway";
 import type { EventoGateway } from "../tipos";
 
@@ -16,6 +16,13 @@ export function removerMembro(s: ServidorDetalhe, usuarioId: string): ServidorDe
                 : c,
         ),
     };
+}
+
+// promovido ou rebaixado: só troca a permissão (a lista de membros reagrupa sozinha).
+// Chega pela resposta da ação e pelo evento; o segundo não muda nada
+export function definirPermissao(s: ServidorDetalhe, usuarioId: string, permissao: Permissao): ServidorDetalhe {
+    if (!s.membros.some((m) => m.usuario.id === usuarioId && m.permissao !== permissao)) return s;
+    return { ...s, membros: s.membros.map((m) => (m.usuario.id === usuarioId ? { ...m, permissao } : m)) };
 }
 
 // o UPDATE_SERVER traz só o que mudou (nome, ícone ou os dois): o resto fica como está
@@ -63,6 +70,9 @@ function aplicar(s: ServidorDetalhe, evento: EventoGateway): ServidorDetalhe {
             if (!usuario || s.membros.some((m) => m.usuario.id === usuario.id)) return s;
             return { ...s, membros: [...s.membros, { permissao: "MEMBRO", usuario }] };
         }
+        // continua no servidor, só muda de grupo
+        if (evento.acao === "PROMOVIDO") return definirPermissao(s, evento.usuarioId, "ADMIN");
+        if (evento.acao === "REBAIXADO") return definirPermissao(s, evento.usuarioId, "MEMBRO");
         // saiu, foi expulso ou banido
         return removerMembro(s, evento.usuarioId);
     }

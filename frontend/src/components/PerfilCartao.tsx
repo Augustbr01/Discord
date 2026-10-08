@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Ban, CalendarDays, Camera, UserMinus } from "lucide-react";
+import { Ban, CalendarDays, Camera, Loader2, ShieldMinus, ShieldPlus, UserMinus } from "lucide-react";
 import type { Usuario } from "../api";
 import { avatarReal, dataLonga } from "../lib/util";
 import { Avatar } from "./ui/Avatar";
@@ -14,6 +14,10 @@ type Props = {
     ancora: HTMLElement;
     onFechar: () => void;
     onEditarFoto: () => void;
+    // o que a pessoa é no servidor aberto (aparece do lado do nome)
+    papel: "dono" | "admin" | null;
+    // só vem quando você pode dar ou tirar admin dessa pessoa; `admin` é como ela está agora
+    cargo?: { admin: boolean; mudar: () => Promise<void> };
     // só vem quando você pode expulsar e banir essa pessoa do servidor aberto
     moderacao?: { expulsar: () => void; banir: () => void };
 };
@@ -28,9 +32,11 @@ const LARGURA_FOLHA = 600;
 type Posicao = { left: number; top: number } | "folha";
 
 // cartão de perfil que abre ao clicar em alguém (membros, chat, salas de voz)
-export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto, moderacao }: Props) {
+export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEditarFoto, papel, cargo, moderacao }: Props) {
     const ref = useRef<HTMLDivElement>(null);
     const [posicao, setPosicao] = useState<Posicao | null>(null);
+    // esperando o back responder o "tornar admin" / "remover como admin"
+    const [mudandoCargo, setMudandoCargo] = useState(false);
 
     // ao lado do que foi clicado: à direita se couber, senão à esquerda; sempre dentro da janela
     const posicionar = useCallback(() => {
@@ -55,7 +61,8 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
         setPosicao({ left, top });
     }, [ancora, onFechar]);
 
-    useLayoutEffect(() => posicionar(), [posicionar, usuario]);
+    // virou admin ou deixou de ser: quem abriu mudou de grupo na lista e o cartão mudou de altura
+    useLayoutEffect(() => posicionar(), [posicionar, usuario, papel]);
 
     // fecha com clique fora ou Esc. Clicar no próprio elemento que abriu não conta: quem alterna é ele.
     // Rolagem só acompanha quem abriu (o chat rola sozinho quando chega mensagem, e isso fechava o
@@ -99,6 +106,13 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
 
     const fundo = avatarReal(usuario.avatarUrl);
 
+    // o cartão fica aberto: deu certo, o botão vira o contrário e a etiqueta do nome muda
+    function mudarCargo() {
+        if (!cargo || mudandoCargo) return;
+        setMudandoCargo(true);
+        cargo.mudar().finally(() => setMudandoCargo(false));
+    }
+
     return createPortal(
         <div
             ref={ref}
@@ -120,6 +134,7 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
             <div className="perfil-corpo">
                 <div className="perfil-nome">
                     <strong className="truncar">{usuario.nome}</strong>
+                    {papel && <span className="perfil-tag">{papel === "dono" ? "Dono" : "Admin"}</span>}
                     {ehVoce && <span className="perfil-tag">Você</span>}
                 </div>
 
@@ -142,16 +157,36 @@ export function PerfilCartao({ usuario, ehVoce, membro, ancora, onFechar, onEdit
                     </button>
                 )}
 
-                {moderacao && (
+                {(cargo || moderacao) && (
                     <div className="perfil-moderacao">
-                        <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.expulsar}>
-                            <UserMinus size={14} />
-                            Expulsar
-                        </button>
-                        <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.banir}>
-                            <Ban size={14} />
-                            Banir
-                        </button>
+                        {cargo && (
+                            <button
+                                className="botao botao-pequeno botao-contorno perfil-moderacao-cargo"
+                                onClick={mudarCargo}
+                                disabled={mudandoCargo}
+                            >
+                                {mudandoCargo ? (
+                                    <Loader2 size={14} className="girar" />
+                                ) : cargo.admin ? (
+                                    <ShieldMinus size={14} />
+                                ) : (
+                                    <ShieldPlus size={14} />
+                                )}
+                                {cargo.admin ? "Remover como admin" : "Tornar admin"}
+                            </button>
+                        )}
+                        {moderacao && (
+                            <>
+                                <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.expulsar}>
+                                    <UserMinus size={14} />
+                                    Expulsar
+                                </button>
+                                <button className="botao botao-pequeno botao-perigo-contorno" onClick={moderacao.banir}>
+                                    <Ban size={14} />
+                                    Banir
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>

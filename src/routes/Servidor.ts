@@ -361,6 +361,49 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send({mensagem:"Canal deletado com sucesso"})
     })
 
+    fastify.post("/servidor/rebaixar", {schema: {body:Type.Object({servidorId:Type.String(),membroId:Type.String()})}} ,async (req,rep) => {
+        const usuarioId = req.user.id
+        const {servidorId,membroId} = req.body;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where:{permissao:Permissao.ADMIN,usuarioId_servidorId:{usuarioId:usuarioId,servidorId:servidorId}},select: {servidor: {select: {donoId:true}}}});
+
+        if(!isAdmin) {
+            return rep.code(403).send({mensagem:"Sem permissão!"});
+        }
+
+        if(membroId === isAdmin.servidor.donoId) {
+            return rep.code(403).send({mensagem:"O dono não pode ser rebaixado!"});
+        }
+
+        try {
+            await prisma.usuarioServidor.update({where:{usuarioId_servidorId:{usuarioId:membroId,servidorId:servidorId}},data:{permissao: Permissao.MEMBRO}});
+        }catch(e) {
+            return rep.code(400).send({mensagem:"Falha ao rebaixar usuário!"});
+        }
+        await publicarParaServidor(servidorId,{tipo:"MEMBROS",servidorId:servidorId,usuarioId:membroId,acao: AcaoUsuario.REBAIXADO});
+
+        return rep.code(204).send({ok:true});
+    })
+
+    fastify.post("/servidor/promover", {schema: {body: Type.Object({servidorId:Type.String(),membroId:Type.String()})}},async (req,rep) => {
+        const usuarioId = req.user.id;
+        const {servidorId,membroId} = req.body;
+
+        const isAdmin = await prisma.usuarioServidor.findUnique({where:{permissao:Permissao.ADMIN,usuarioId_servidorId:{usuarioId:usuarioId,servidorId:servidorId}}});
+
+        if(!isAdmin) {
+            return rep.code(403).send({mensagem:"Sem permissão!"});
+        }
+
+        try {
+            await prisma.usuarioServidor.update({where:{usuarioId_servidorId:{usuarioId:membroId,servidorId:servidorId}},data: {permissao: Permissao.ADMIN}});
+        }catch(e) {
+            return rep.code(400).send({mensagem:"Falha ao promover usuário!"});
+        }
+        await publicarParaServidor(servidorId,{tipo:"MEMBROS",servidorId:servidorId,usuarioId:membroId,acao: AcaoUsuario.PROMOVIDO});
+        return rep.code(204).send();
+    })
+
     fastify.post("/servidor/convite/:id",{schema: {params: Type.Object({id: Type.String()})}},async (req,rep) => {
         const idUsuario = req.user.id;
         const {id} = req.params;
@@ -399,6 +442,25 @@ export const RotasServidor : (FastifyPluginAsyncTypebox) = async (fastify) => {
         return rep.code(200).send(criado);
     })
 
-    fastify.post("/servidor/sair", {schema:{body: Type.Object({})}}, async (req,rep) => {
+    fastify.post("/servidor/sair", {schema:{body: Type.Object({servidorId:Type.String()})}}, async (req,rep) => {
+        const usuarioId = req.user.id;
+        const {servidorId} = req.body;
+        try {
+
+            const isDono = await prisma.servidor.findUnique({where:{id:servidorId,donoId:usuarioId}});
+
+            if(isDono) {
+                return rep.code(403).send({mensagem:"Um dono não pode sair do servidor,apague o servidor nas configurações"});
+            }
+
+            await prisma.usuarioServidor.delete({where:{usuarioId_servidorId:{usuarioId:usuarioId,servidorId:servidorId}}});
+        }catch(e) {
+            console.log("opa")
+            return rep.code(400).send({mensagem:"Falha ao sair do servidor!"});
+        }
+        await publicarParaServidor(servidorId,{tipo:"MEMBROS",servidorId:servidorId,usuarioId:usuarioId,acao: AcaoUsuario.SAIU});
+        await publicarParaUsuarios([usuarioId],{tipo:"MEMBROS",servidorId:servidorId,usuarioId:usuarioId,acao: AcaoUsuario.SAIU});
+
+        return rep.code(204).send({ok:true});
     })
 }

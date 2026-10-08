@@ -28,10 +28,11 @@ export type EventoGateway =
     | { tipo: "SERVIDOR_APAGADO"; servidorId: string }
     // o servidor mudou: o que vier (nome, ícone) troca; o que não vier fica como está
     | { tipo: "UPDATE_SERVER"; servidorId: string; nome?: string; iconeUrl?: string | null }
-    // alguém entrou (por convite) ou saiu da lista de membros (saiu, expulso ou banido).
+    // alguém entrou (por convite) ou saiu da lista de membros (saiu, expulso ou banido), ou virou
+    // admin (PROMOVIDO) ou deixou de ser (REBAIXADO) e continua no servidor.
     // usuarioId diz quem. No ENTROU, `usuario` traz nome e foto pra pessoa já aparecer na lista;
     // sem ele (ou sem usuarioId), o front rebusca o servidor
-    | { tipo: "MEMBROS"; servidorId: string; acao: "ENTROU" | "SAIU" | "EXPULSO" | "BANIDO"; usuarioId?: string; usuario?: Usuario }
+    | { tipo: "MEMBROS"; servidorId: string; acao: "ENTROU" | "SAIU" | "EXPULSO" | "BANIDO" | "PROMOVIDO" | "REBAIXADO"; usuarioId?: string; usuario?: Usuario }
     | { tipo: "MENSAGEM_CRIADA"; servidorId: string; canalId: string; mensagem: Mensagem }
     | { tipo: "MENSAGEM_EDITADA"; servidorId: string; canalId: string; mensagem: Mensagem }
     | { tipo: "MENSAGEM_DELETADA"; servidorId: string; canalId: string; mensagem: { id: string } }
