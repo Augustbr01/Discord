@@ -2,6 +2,7 @@
 // WASD/setas ou o joystick da tela pra andar. Esbarra nas paredes e nos móveis,
 // sobe os degraus do cinema, pula (Espaço ou rodinha pra baixo), anda devagar (Shift) e senta.
 // Ctrl (um toque, como no CoD): parado agacha/levanta; correndo, desliza e volta a ficar em pé.
+// No ar correndo (bunny hop), o Ctrl desliza assim que encostar no chão.
 // C deita no chão (rasteja devagar) e levanta; deslizando, termina o deslize deitado.
 //
 // A movimentação é a da Source/CS: aceleração e atrito no chão, controle no ar (air strafe)
@@ -99,6 +100,8 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         // deslizando: o tempo que falta (0 = não); e a espera até poder deslizar de novo
         deslize: 0,
         esperaDeslize: 0,
+        // Ctrl no ar correndo: desliza quando encostar no chão
+        deslizeNaQueda: false,
         // rastejando: a câmera balança junto com as puxadas dos braços
         faseRasteja: 0, balancoRasteja: 0,
     });
@@ -166,6 +169,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 e.preventDefault();
                 // o Ctrl desse giro era pro zoom, não pra agachar: desfaz
                 if (acaoCtrl.current === "agachar") agachadoLigado.current = !agachadoLigado.current;
+                if (acaoCtrl.current === "deslizar") fisica.current.deslizeNaQueda = false;
                 acaoCtrl.current = "zoom";
                 // linhas (Firefox) viram pixels; um "clique" da rodinha (~100 px) dá ~1,3×,
                 // e o pinça do touchpad (deltas pequenos) vai suave
@@ -362,12 +366,16 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             return;
         }
         const vel = Math.hypot(f.vx, f.vz);
+        const rapido = !agachadoLigado.current && vel >= DESLIZE_MINIMO;
         // correndo: desliza (com um impulso pra frente, como no CoD)
-        if (f.noChao && !agachadoLigado.current && vel >= DESLIZE_MINIMO && f.esperaDeslize <= 0) {
-            const k = Math.max(vel, DESLIZE_IMPULSO) / vel;
-            f.vx *= k;
-            f.vz *= k;
-            f.deslize = DESLIZE_DURACAO;
+        if (f.noChao && rapido && f.esperaDeslize <= 0) {
+            comecarDeslize();
+            acaoCtrl.current = "deslizar";
+            return;
+        }
+        // no ar correndo (bunny hop): fica guardado e desliza ao encostar no chão; outro toque desiste
+        if (!f.noChao && (rapido || f.deslizeNaQueda)) {
+            f.deslizeNaQueda = !f.deslizeNaQueda;
             acaoCtrl.current = "deslizar";
             return;
         }
@@ -379,6 +387,15 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             agachadoLigado.current = true;
         }
         acaoCtrl.current = "agachar";
+    }
+
+    function comecarDeslize() {
+        const f = fisica.current;
+        const vel = Math.hypot(f.vx, f.vz);
+        const k = Math.max(vel, DESLIZE_IMPULSO) / vel;
+        f.vx *= k;
+        f.vz *= k;
+        f.deslize = DESLIZE_DURACAO;
     }
 
     // um tick deslizando: perde velocidade aos poucos, curva só um pouco, e termina em pé
@@ -493,6 +510,13 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
                 f.noChao = true;
             }
         }
+        // aterrissou com o Ctrl guardado do ar: já entra deslizando (o pulo no tick seguinte
+        // é o slide cancel, então dá pra emendar o bhop)
+        if (f.noChao && f.deslizeNaQueda) {
+            f.deslizeNaQueda = false;
+            const rapido = !agachadoLigado.current && !deitadoLigado.current && Math.hypot(f.vx, f.vz) >= DESLIZE_MINIMO;
+            if (rapido && f.deslize <= 0 && f.esperaDeslize <= 0) comecarDeslize();
+        }
         // deslizou pra fora de uma beirada: cai com o embalo, já sem deslizar
         if (!f.noChao && f.deslize > 0) {
             f.deslize = 0;
@@ -566,6 +590,7 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             const a = pedidoAgora.assento;
             f.assento = a;
             deitadoLigado.current = false;
+            f.deslizeNaQueda = false;
             p.x = a.x;
             p.z = a.z;
             p.y = a.y;
