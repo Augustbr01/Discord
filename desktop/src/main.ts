@@ -2,6 +2,7 @@
 // (bandeja, atalhos globais, contador no ícone, seletor de tela, links liberdade://, abrir com o sistema)
 import { app, BrowserWindow, ipcMain, Menu, session, type IpcMainEvent, type MenuItemConstructorOptions } from "electron";
 import { liberarAtalhos, registrarAtalhos } from "./atalhos";
+import { configurarAudioTela } from "./audioTela";
 import { criarBandeja, definirNaoLidos, definirVoz } from "./bandeja";
 import { CANAIS, type Atalho } from "./canais";
 import { ehDoSite, ID_APP, PROTOCOLO, SITE } from "./config";
@@ -149,6 +150,7 @@ function iniciar() {
         configurarPermissoes();
         configurarPonte();
         configurarSeletorTela(() => janela);
+        configurarAudioTela();
 
         const inicial = (linkPendente && enderecoDoLink(linkPendente)) ?? SITE;
         linkPendente = null;

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Som da tela</title>
+    <style>
+        /* as mesmas cores do site (frontend/src/styles/base.css) */
+        :root {
+            --fundo-0: #09090b;
+            --fundo-2: #131315;
+            --fundo-3: #19191c;
+            --borda-2: #27272b;
+            --borda-3: #3a3a40;
+            --texto: #ededef;
+            --texto-2: #b4b4bb;
+            --texto-3: #85858e;
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex;
+            flex-direction: column;
+            background: var(--fundo-0);
+            color: var(--texto);
+            font: 14px/1.4 "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
+        }
+        header { padding: 18px 20px 6px; }
+        h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+        header p { margin: 0; color: var(--texto-3); font-size: 13px; }
+        main { flex: 1; overflow-y: auto; padding: 10px 20px; }
+        .lista { display: flex; flex-direction: column; gap: 6px; }
+        .grupo { margin: 10px 0 2px; color: var(--texto-3); font-size: 12px; font-weight: 500; }
+        .opcao {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 10px 12px;
+            border: 1px solid var(--borda-2);
+            border-radius: 8px;
+            background: var(--fundo-2);
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+        .opcao:hover { background: var(--fundo-3); border-color: var(--borda-3); }
+        .opcao[aria-checked="true"] { border-color: var(--texto); box-shadow: 0 0 0 1px var(--texto); }
+        .opcao:focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+        .opcao span { color: var(--texto-3); font-size: 12px; }
+        .vazio { margin: 4px 0; color: var(--texto-3); font-size: 13px; }
+        footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 14px 20px;
+            border-top: 1px solid var(--borda-2);
+        }
+        .botao {
+            padding: 8px 14px;
+            border: 1px solid var(--borda-3);
+            border-radius: 8px;
+            background: none;
+            color: var(--texto);
+            font: inherit;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .botao:hover { background: var(--fundo-3); }
+        .botao.principal { border-color: var(--texto); background: var(--texto); color: var(--fundo-0); }
+        .botao.principal:hover { background: #fff; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Qual som vai junto com a tela?</h1>
+        <p>O som do Liberdade (as vozes da chamada) nunca vai.</p>
+    </header>
+    <main>
+        <div class="lista" role="radiogroup" aria-label="Som da tela"></div>
+    </main>
+    <footer>
+        <button class="botao principal" id="confirmar">Compartilhar</button>
+    </footer>
+
+    <script>
+        const lista = document.querySelector(".lista");
+        let programas = [];
+        // { tipo: "programa", nome } | { tipo: "tudo" } | { tipo: "nenhum" }
+        let escolha = null;
+
+        const igual = (a, b) => a && b && a.tipo === b.tipo && a.nome === b.nome;
+
+        function opcao(titulo, detalhe, valor) {
+            const botao = document.createElement("button");
+            botao.className = "opcao";
+            botao.setAttribute("role", "radio");
+            botao.setAttribute("aria-checked", String(igual(valor, escolha)));
+            const nome = document.createElement("strong");
+            // nome de outro programa: sempre como texto, nunca como HTML
+            nome.textContent = titulo;
+            botao.append(nome);
+            if (detalhe) {
+                const span = document.createElement("span");
+                span.textContent = detalhe;
+                botao.append(span);
+            }
+            botao.addEventListener("click", () => {
+                escolha = valor;
+                desenhar();
+            });
+            botao.addEventListener("dblclick", () => window.seletor.escolherAudio(valor));
+            return botao;
+        }
+
+        function grupo(texto) {
+            const p = document.createElement("p");
+            p.className = "grupo";
+            p.textContent = texto;
+            return p;
+        }
+
+        function desenhar() {
+            const foco = document.activeElement?.textContent;
+            lista.replaceChildren(grupo("Programas tocando agora"));
+            if (programas.length === 0) {
+                const vazio = document.createElement("p");
+                vazio.className = "vazio";
+                vazio.textContent = "Nenhum programa tocando som agora. Dê play no que você quer compartilhar e ele aparece aqui.";
+                lista.append(vazio);
+            }
+            for (const nome of programas) lista.append(opcao(nome, null, { tipo: "programa", nome }));
+            lista.append(
+                grupo("Outras opções"),
+                opcao("Todo o som do computador", "Todos os programas, menos o Liberdade", { tipo: "tudo" }),
+                opcao("Sem som", "Só a imagem", { tipo: "nenhum" }),
+            );
+            // a lista é redesenhada a cada segundo: o foco do teclado continua onde estava
+            if (foco) [...lista.querySelectorAll(".opcao")].find((b) => b.textContent === foco)?.focus();
+        }
+
+        async function atualizar() {
+            const r = await window.seletor.programas();
+            const mudou = r.programas.join("\n") !== programas.join("\n");
+            programas = r.programas;
+            if (!escolha) {
+                // o último que você escolheu, se estiver tocando; senão o único tocando; senão todo o som
+                const ultimaTocando = r.ultima.tipo === "programa" && programas.includes(r.ultima.nome);
+                escolha = ultimaTocando ? r.ultima : programas.length === 1 ? { tipo: "programa", nome: programas[0] } : { tipo: "tudo" };
+                desenhar();
+            } else if (mudou) {
+                desenhar();
+            }
+        }
+
+        document.getElementById("confirmar").addEventListener("click", () => window.seletor.escolherAudio(escolha ?? { tipo: "nenhum" }));
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") window.seletor.escolherAudio({ tipo: "nenhum" });
+            if (e.key === "Enter" && escolha) window.seletor.escolherAudio(escolha);
+        });
+
+        // programa que começar a tocar com a janela aberta já aparece
+        atualizar();
+        setInterval(atualizar, 1000);
+    </script>
+</body>
+</html>

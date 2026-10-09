@@ -12,7 +12,8 @@ await build({
     // preload com sandbox precisa ser CommonJS
     format: "cjs",
     target: "node22",
-    external: ["electron"],
+    // venmic: binário nativo (fica em node_modules, fora do bundle)
+    external: ["electron", "@vencord/venmic"],
     sourcemap: true,
     logLevel: "info",
 });

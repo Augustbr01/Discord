@@ -27,6 +27,9 @@
     "typescript": "^7.0.2"
   },
   "desktopName": "br.com.augustdev.liberdade.desktop",
+  "optionalDependencies": {
+    "@vencord/venmic": "^7.2.3"
+  },
   "build": {
     "appId": "br.com.augustdev.liberdade",
     "productName": "Liberdade",

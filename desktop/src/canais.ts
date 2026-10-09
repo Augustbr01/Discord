@@ -11,7 +11,16 @@ export const CANAIS = {
     // seletor de tela: lista as fontes e devolve a escolhida (ou null, cancelou)
     fontes: "liberdade:seletor-fontes",
     escolher: "liberdade:seletor-escolher",
+    // seletor de som (Linux): os programas tocando agora e o escolhido
+    programas: "liberdade:audio-programas",
+    escolherAudio: "liberdade:audio-escolher",
+    // site → main: a tela que acabou de vir leva som? E: parou, pode desligar o microfone virtual
+    audioDaTela: "liberdade:audio-da-tela",
+    pararAudio: "liberdade:audio-parar",
 } as const;
+
+// de onde sai o som da tela no Linux: um programa, todos (menos o Liberdade) ou nenhum
+export type EscolhaAudio = { tipo: "programa"; nome: string } | { tipo: "tudo" } | { tipo: "nenhum" };
 
 export type Atalho = "mic" | "surdo";
 

@@ -23,7 +23,7 @@ Outro endereço: `npm start -- --site=https://liberdade.phelipedev.com.br` ou `L
 | Atalhos globais Ctrl+Shift+M (microfone) e Ctrl+Shift+D (áudio), com som | `src/atalhos.ts` |
 | Contador de não lidas no ícone (dock, barra de tarefas) e piscar quando chega mensagem | `src/bandeja.ts` |
 | Seletor de tela/janela para compartilhar (macOS 15+ e Wayland usam o do sistema) | `src/seletorTela.ts`, `src/seletor.html` |
-| Som do computador junto com a tela (só Windows) | `src/seletorTela.ts` |
+| Som junto com a tela: no Windows o do computador; no Linux só o programa que você escolher (venmic + PipeWire, como o Vesktop), nunca o som da chamada | `src/seletorTela.ts`, `src/audioTela.ts`, `src/seletorAudio.html` |
 | Links `liberdade://convite/<id>` abrem o convite no app | `src/main.ts` |
 | Uma instância só, tamanho/posição da janela lembrados, menu do botão direito com corretor | `src/main.ts`, `src/janela.ts` |
 | Página de "sem conexão" que tenta de novo sozinha | `src/offline.html` |

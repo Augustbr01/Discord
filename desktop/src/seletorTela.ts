@@ -3,11 +3,13 @@
 // e no Linux com Wayland quem escolhe é o portal do sistema (aí já vem uma fonte só)
 import { BrowserWindow, desktopCapturer, ipcMain, session, type DesktopCapturerSource, type Streams } from "electron";
 import path from "node:path";
+import { audioDisponivel, escolherAudio } from "./audioTela";
 import { CANAIS, type FonteTela } from "./canais";
 import { ehDoSite } from "./config";
 
 const WAYLAND = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
-// áudio do sistema junto com a tela: o Chromium só consegue no Windows
+// áudio do sistema junto com a tela: o Chromium só consegue no Windows. No Linux vai pelo venmic
+// (audioTela.ts): um programa só, escolhido depois da tela
 const AUDIO_DO_SISTEMA = process.platform === "win32";
 
 // um seletor aberto por vez: o pedido que chega com um aberto é recusado
@@ -92,6 +94,7 @@ export function configurarSeletorTela(principal: () => BrowserWindow | null) {
                 const comAudio = pedido.audioRequested && AUDIO_DO_SISTEMA;
                 const escolhida = WAYLAND && fontes.length === 1 ? fontes[0] : await escolherFonte(pai, fontes, comAudio);
                 if (!escolhida) return responder(null);
+                if (pedido.audioRequested && audioDisponivel()) await escolherAudio(pai);
                 // sem som: a chave `audio` fica de fora (com undefined o Electron recusa a resposta)
                 responder(comAudio ? { video: escolhida, audio: "loopback" } : { video: escolhida });
             } catch (err) {
