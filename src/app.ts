@@ -81,7 +81,8 @@ app.register(oauth2, {
         auth: oauth2.DISCORD_CONFIGURATION
     },
     startRedirectPath: "/api/auth/discord",
-    callbackUri: MODO === "development" ? "http://localhost:5173/api/auth/callback" : "https://liberdade.phelipedev.com.br/api/auth/callback"
+    // cada um hospeda o seu site: URL_SITE no .env diz qual (sem ela, fica o do phelipedev)
+    callbackUri: MODO === "development" ? "http://localhost:5173/api/auth/callback" : `${process.env.URL_SITE ?? "https://liberdade.phelipedev.com.br"}/api/auth/callback`
 })
 app.register(imagemRotas, {prefix:"/api"});
 app.register(routeHook,{prefix:"/api"});
