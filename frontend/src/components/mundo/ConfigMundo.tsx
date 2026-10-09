@@ -75,6 +75,12 @@ export function ConfigMundo({ onFechar }: { onFechar: () => void }) {
                             onChange={(e) => mudarConfig({ fov: Number(e.target.value) })}
                             aria-label="Campo de visão"
                         />
+                        <Alternar
+                            titulo="Terceira pessoa"
+                            detalhe="A câmera fica atrás do seu boneco. Também dá pra trocar com a tecla V."
+                            ligado={cfg.terceiraPessoa}
+                            onMudar={(v) => mudarConfig({ terceiraPessoa: v })}
+                        />
                     </section>
 
                     <section>

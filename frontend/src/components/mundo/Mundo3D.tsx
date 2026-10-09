@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as EventoPonteiro, type ReactNode, type RefObject } from "react";
 import { VideoTrack, useConnectionState, useMaybeRoomContext, useRemoteParticipants, useTracks, type TrackReference } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
-import { ChevronsDown, ChevronsUp, Keyboard, Loader2, LogOut, MonitorUp, MousePointerClick, Settings, Tablet, X } from "lucide-react";
+import { ChevronsDown, ChevronsUp, Keyboard, Loader2, LogOut, MonitorUp, MousePointerClick, Settings, SwitchCamera, Tablet, X } from "lucide-react";
 import type { Object3D } from "three";
 import type { Canal, ServidorDetalhe, ServidorResumo, Usuario } from "../../api";
 import { useChatSala } from "../../contexto/ChatSala";
@@ -20,8 +20,9 @@ import { Controles } from "../chamada/Controles";
 import { IconeServidor } from "../ui/Avatar";
 import { PainelControle } from "../controle/PainelControle";
 import type { SomDaTV } from "./AudioEspacial";
-import { useConfigMundo } from "./config";
+import { lerConfig, mudarConfig, useConfigMundo } from "./config";
 import { ConfigMundo, Velocimetro } from "./ConfigMundo";
+import type { Papel } from "./Boneco";
 import { CanvasMundo, Cena, criarTunel, type Pessoa, type Tunel } from "./Cena";
 import type { LinhaChat } from "./Holograma";
 import type { TelaNaTV, YoutubeNaTV } from "./Predio";
@@ -30,6 +31,7 @@ import { dentro, gerarPlanta, nascerNaSala, type Interativo, type Ponto } from "
 import { ITEM, POSTURA, useJogadoresDoAndar, type Pose } from "./rede";
 import { AvisoSoftware, ContextoPerdido, Limite3D, SemWebGL, verificarWebGL } from "./SemWebGL";
 import { ListaTeclas } from "./Teclas";
+import { TelaCarregando } from "./TelaCarregando";
 import { carregarFontes } from "./texturas";
 
 type Props = {
@@ -82,6 +84,23 @@ export default function Mundo3D(props: Props) {
     const chave = servidor ? `${servidor.id}:${servidor.canais.map((c) => c.id).join(",")}:${tentativa}` : "";
     const semWebGL = <SemWebGL onTentar={remontar} onFechar={props.onFechar} />;
 
+    // a tela de carregamento fica um instante depois do andar montar (o primeiro quadro
+    // compila os shaders e engasga) e some devagar por cima dele
+    const pronto = !!servidor && fontesProntas;
+    const [cortina, setCortina] = useState<"cobrindo" | "saindo" | null>("cobrindo");
+    useEffect(() => {
+        if (!pronto) {
+            setCortina("cobrindo");
+            return;
+        }
+        const saindo = window.setTimeout(() => setCortina("saindo"), 300);
+        const fim = window.setTimeout(() => setCortina(null), 800);
+        return () => {
+            window.clearTimeout(saindo);
+            window.clearTimeout(fim);
+        };
+    }, [pronto]);
+
     return (
         <div className="mundo">
             {!suporte.ok ? (
@@ -89,14 +108,8 @@ export default function Mundo3D(props: Props) {
             ) : (
                 <Limite3D key={tentativa} fallback={semWebGL}>
                     <CanvasMundo tunel={tunel} onContexto={setContextoPerdido} />
-                    {servidor && fontesProntas ? (
-                        <Andar key={chave} {...props} servidor={servidor} tunel={tunel} chegouAgora={chegouAgora} />
-                    ) : (
-                        <div className="mundo-carregando">
-                            <Loader2 size={20} className="girar" />
-                            <span>Chegando no andar…</span>
-                        </div>
-                    )}
+                    {pronto && <Andar key={chave} {...props} servidor={servidor} tunel={tunel} chegouAgora={chegouAgora} />}
+                    {cortina && <TelaCarregando texto="Chegando no andar…" saindo={cortina === "saindo"} />}
                     {contextoPerdido && <ContextoPerdido onRecarregar={remontar} />}
                     {suporte.software && avisoSoftware && <AvisoSoftware onFechar={() => setAvisoSoftware(false)} />}
                 </Limite3D>
@@ -333,9 +346,18 @@ function Andar({
         return () => document.removeEventListener("mousedown", aoClicar);
     }, [alternarTela]);
 
+    // igual ao cartão de perfil: o dono aparece como dono, os outros admins como admin
+    const papeis = useMemo(() => {
+        const mapa = new Map<string, Papel>();
+        for (const m of servidor.membros) if (m.permissao === "ADMIN") mapa.set(m.usuario.id, "admin");
+        mapa.set(servidor.dono.id, "dono");
+        return mapa;
+    }, [servidor.membros, servidor.dono.id]);
+
     const pessoas: Pessoa[] = [];
     const andando = new Set(ids);
     const comMidia = (id: string) => ({
+        papel: papeis.get(id) ?? null,
         participante: remotosPorId.get(id),
         camera: midia.porPessoa.get(id)?.camera,
         telas: midia.porPessoa.get(id)?.telas ?? [],
@@ -573,6 +595,10 @@ function Andar({
                 e.preventDefault();
                 acoes.current.t();
             }
+            if (e.code === "KeyV") {
+                e.preventDefault();
+                mudarConfig({ terceiraPessoa: !lerConfig().terceiraPessoa });
+            }
             if (e.code === "KeyO") {
                 e.preventDefault();
                 setConfigAberta((v) => !v);
@@ -609,6 +635,7 @@ function Andar({
                     servidor={servidor}
                     andar={andar}
                     pose={pose}
+                    eu={eu}
                     pessoas={pessoas}
                     posicoes={posicoes}
                     pessoasPorSala={pessoasPorSala}
@@ -654,6 +681,15 @@ function Andar({
 
                 <button className="mundo-config-botao" onClick={() => setConfigAberta(true)} aria-label="Configurações (O)" title="Configurações (O)">
                     <Settings size={18} />
+                </button>
+                <button
+                    className={`mundo-config-botao mundo-visao-botao ${config.terceiraPessoa ? "ativo" : ""}`}
+                    onClick={() => mudarConfig({ terceiraPessoa: !config.terceiraPessoa })}
+                    aria-label="Terceira pessoa (V)"
+                    aria-pressed={config.terceiraPessoa}
+                    title={config.terceiraPessoa ? "Voltar pra primeira pessoa (V)" : "Terceira pessoa (V)"}
+                >
+                    <SwitchCamera size={18} />
                 </button>
 
                 {!travado && !toqueAtivo && !parado && !canalChat && !chatCallAberto && !controleAberto && (

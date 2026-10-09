@@ -1,5 +1,5 @@
 // Um boneco por pessoa: anda até a última posição que chegou pela rede (suavizado),
-// mostra o nome, a foto (ou a câmera, se estiver ligada) no rosto e as telas
+// mostra o nome (com o cargo em cima, se for dono ou admin), a foto (ou a câmera, se estiver ligada) no rosto e as telas
 // (compartilhando, aparece um selo em cima da cabeça; a tela só abre pra quem clicar nele)
 // compartilhadas flutuando em cima da cabeça. Pula, agacha, desliza, senta e deita
 // (quadril e joelho de cada perna mudam de ângulo conforme a postura).
@@ -14,7 +14,7 @@ import { caixaArredondada, material, tom } from "./Moveis";
 import { alturaChao, type Solido } from "./colisao";
 import type { Ponto } from "./planta";
 import { ITEM, POSTURA, type Pose } from "./rede";
-import { texturaCracha, texturaSombra, texturaTexto } from "./texturas";
+import { texturaCracha, texturaPapel, texturaSombra, texturaTexto } from "./texturas";
 
 const CORES = ["#c8664b", "#5b8c6a", "#4f7ab8", "#d1a64a", "#8a5fa8", "#3f9a9a", "#c25b7a", "#7f8c99"];
 
@@ -30,6 +30,7 @@ const CALCA = material("#26262b", 0.85);
 const CORPO_TABLET = material("#c4c6cc", 0.45, 0.3);
 
 const LARGURA_TELA = 1.3;
+const CABECA = new THREE.Vector3();
 // quanto a cabeça gira pro lado antes do corpo acompanhar (sentado o corpo fica no lugar)
 const GIRO_CABECA = 1.0;
 const GIRO_CABECA_SENTADO = 1.4;
@@ -65,6 +66,19 @@ const FORMAS: Record<number, Forma> = {
     [POSTURA.DEITADO]: { queda: 0, inclinacao: 0, quadril: 0, joelho: -0.15, braco: 2.7, deitar: 1 },
 };
 
+export type Papel = "dono" | "admin" | null;
+
+// uma textura por cargo, pra todos os bonecos
+const texturasPapel = new Map<NonNullable<Papel>, ReturnType<typeof texturaPapel>>();
+function etiquetaPapel(papel: NonNullable<Papel>) {
+    let t = texturasPapel.get(papel);
+    if (!t) texturasPapel.set(papel, (t = texturaPapel(papel === "dono" ? "DONO" : "ADMIN")));
+    return t;
+}
+const ALTURA_PAPEL = 0.1;
+// do meio do crachá até o meio da etiqueta
+const ACIMA_DO_CRACHA = 0.145;
+
 // diferença entre dois ângulos pelo caminho mais curto
 function giro(para: number, de: number) {
     return Math.atan2(Math.sin(para - de), Math.cos(para - de));
@@ -82,6 +96,10 @@ type Props = {
     telaAberta: boolean;
     // a mira está no selo / na tela desta pessoa
     telaMirada: boolean;
+    papel: Papel;
+    // é você (terceira pessoa): segue a câmera sem atraso, sem crachá, e some quando a câmera
+    // chega perto da cabeça (primeira pessoa, ou encostado numa parede)
+    proprio?: boolean;
     // o selo (ou a tela aberta) de cada pessoa, pra mira achar onde clicou
     alvosTela: Map<string, THREE.Object3D>;
     // posição atual de cada boneco, pro áudio espacial saber de onde vem a voz
@@ -90,13 +108,14 @@ type Props = {
     solidos: Solido[];
 };
 
-export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAberta, telaMirada, alvosTela, posicoes, solidos }: Props) {
+export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAberta, telaMirada, papel, proprio = false, alvosTela, posicoes, solidos }: Props) {
     const raiz = useRef<THREE.Group>(null);
     const corpo = useRef<THREE.Group>(null);
     const tronco = useRef<THREE.Group>(null);
     // [quadril esq., quadril dir., joelho esq., joelho dir., braço esq., braço dir.]
     const juntas = useRef<(THREE.Group | null)[]>([]);
     const cracha = useRef<THREE.Sprite>(null);
+    const etiqueta = useRef<THREE.Sprite>(null);
     const grupoTelas = useRef<THREE.Group>(null);
     const anel = useRef<THREE.MeshBasicMaterial>(null);
     const sombra = useRef<THREE.Mesh>(null);
@@ -154,13 +173,13 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAber
             e.corpo = alvo.rot;
             e.iniciado = true;
         }
-        const k = 1 - Math.exp(-delta * 10);
+        const k = proprio ? 1 : 1 - Math.exp(-delta * 10);
         const antesX = e.x;
         const antesZ = e.z;
         e.x += (alvo.x - e.x) * k;
         e.z += (alvo.z - e.z) * k;
         // na altura (pulo) acompanha mais rápido
-        e.y += (alvo.y - e.y) * (1 - Math.exp(-delta * 16));
+        e.y += (alvo.y - e.y) * (proprio ? 1 : 1 - Math.exp(-delta * 16));
         e.rot += giro(alvo.rot, e.rot) * k;
         e.pitch += ((alvo.pitch ?? 0) - e.pitch) * k;
 
@@ -249,11 +268,13 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAber
             tablet.current.position.y = 0.36 + 0.22 * s;
         }
 
-        // nome e telas acompanham a altura da cabeça
+        // nome, cargo e telas acompanham a altura da cabeça (com cargo, as telas sobem pra não cobrir)
         const emPe = 1 - forma.deitar;
-        if (cracha.current) cracha.current.position.y = (2.08 - forma.queda) * emPe + 0.8 * forma.deitar;
+        const yCracha = (2.08 - forma.queda) * emPe + 0.8 * forma.deitar;
+        if (cracha.current) cracha.current.position.y = yCracha;
+        if (etiqueta.current) etiqueta.current.position.y = yCracha + ACIMA_DO_CRACHA;
         if (grupoTelas.current) {
-            grupoTelas.current.position.y = (2.22 - forma.queda) * emPe + 0.95 * forma.deitar;
+            grupoTelas.current.position.y = (2.22 - forma.queda) * emPe + 0.95 * forma.deitar + (papel ? ACIMA_DO_CRACHA : 0);
             // as telas ficam sempre de frente pra quem está olhando
             grupoTelas.current.rotation.y = Math.atan2(olho.position.x - e.x, olho.position.z - e.z);
         }
@@ -264,6 +285,12 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAber
             anel.current.opacity += (nivel - anel.current.opacity) * Math.min(1, delta * 12);
         }
 
+        // você: some com a câmera perto da cabeça (pela posição de verdade dela: deitado, ela fica
+        // lá embaixo). E a sua posição não entra na lista (é de lá que você ouve, não uma voz)
+        if (proprio) {
+            if (grupoCabeca.current) raiz.current.visible = olho.position.distanceTo(grupoCabeca.current.getWorldPosition(CABECA)) > 0.9;
+            return;
+        }
         const pos = posicoes.get(usuario.id);
         if (pos) {
             pos.x = e.x;
@@ -324,9 +351,21 @@ export function Boneco({ usuario, lerAlvo, participante, camera, telas, telaAber
                 </group>
             </group>
 
-            <sprite ref={cracha} position={[0, 2.08, 0]} scale={[alturaCracha * textoCracha.aspecto, alturaCracha, 1]}>
-                <spriteMaterial map={textoCracha.textura} transparent depthWrite={false} toneMapped={false} />
-            </sprite>
+            {!proprio && (
+                <sprite ref={cracha} position={[0, 2.08, 0]} scale={[alturaCracha * textoCracha.aspecto, alturaCracha, 1]}>
+                    <spriteMaterial map={textoCracha.textura} transparent depthWrite={false} toneMapped={false} />
+                </sprite>
+            )}
+
+            {papel && !proprio && (
+                <sprite
+                    ref={etiqueta}
+                    position={[0, 2.08 + ACIMA_DO_CRACHA, 0]}
+                    scale={[ALTURA_PAPEL * etiquetaPapel(papel).aspecto, ALTURA_PAPEL, 1]}
+                >
+                    <spriteMaterial map={etiquetaPapel(papel).textura} transparent depthWrite={false} toneMapped={false} />
+                </sprite>
+            )}
 
             {compartilhando && (
                 <group ref={grupoTelas} position={[0, 2.22, 0]}>

@@ -11,6 +11,8 @@ export type ConfigMundo = {
     inverterY: boolean;
     // campo de visão como no CS (90 = o do jogo), medido na horizontal numa tela 4:3
     fov: number;
+    // a câmera atrás de você (vê o próprio boneco) em vez de nos olhos
+    terceiraPessoa: boolean;
     // segurar Espaço pula sozinho ao encostar no chão
     autoBhop: boolean;
     mostrarVelocidade: boolean;
@@ -23,6 +25,7 @@ export const CONFIG_PADRAO: ConfigMundo = {
     entradaBruta: true,
     inverterY: false,
     fov: 90,
+    terceiraPessoa: false,
     autoBhop: false,
     mostrarVelocidade: false,
     mostrarHitbox: false,

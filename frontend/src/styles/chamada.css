@@ -1040,3 +1040,112 @@
 .aviso-mutado:hover {
     background: var(--fundo-4);
 }
+
+/* compartilhamento de tela: resolução e fps separados (abaixo dos presets) */
+.personalizar-tela {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: -4px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--texto-3);
+    transition: background 0.12s, color 0.12s;
+}
+
+.personalizar-tela:hover {
+    background: var(--fundo-4);
+    color: var(--texto);
+}
+
+.personalizar-tela svg {
+    transition: rotate 0.15s;
+}
+
+.personalizar-tela.aberto svg {
+    rotate: 180deg;
+}
+
+.personalizado-tela {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: -4px;
+    padding: 0 2px;
+}
+
+.seletor-tela {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.segmentos {
+    display: grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--fundo-1);
+    border: 1px solid var(--borda-2);
+}
+
+.segmento {
+    padding: 5px 0;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--texto-3);
+    transition: background 0.12s, color 0.12s;
+}
+
+.segmento:hover {
+    color: var(--texto);
+}
+
+.segmento.ativa {
+    background: var(--fundo-4);
+    color: var(--texto);
+}
+
+/* estatísticas da transmissão de uma tela (canto do quadro, abaixo do "Ao vivo") */
+.bloco-stats {
+    position: absolute;
+    top: 38px;
+    left: 8px;
+    z-index: 3;
+    max-width: calc(100% - 16px);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(9, 9, 11, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--texto);
+    font-variant-numeric: tabular-nums;
+    /* não atrapalha o clique no quadro (destacar / tela cheia) */
+    pointer-events: none;
+}
+
+.bloco-stats-rotulo {
+    color: var(--texto-3);
+    white-space: nowrap;
+}
+
+.bloco-stats em {
+    font-style: normal;
+    color: var(--texto-3);
+}
+
+.bloco-stats-nota {
+    grid-column: 1 / -1;
+    font-size: 11.5px;
+    color: var(--texto-3);
+}

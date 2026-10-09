@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-    ChevronUp, Headphones, HeadphoneOff, Loader2, Mic, MicOff, MonitorUp, MonitorX, PhoneOff, RefreshCw, Settings2, Video,
+    ChevronDown, ChevronUp, Headphones, HeadphoneOff, Loader2, Mic, MicOff, MonitorUp, MonitorX, PhoneOff, RefreshCw, Settings2, Video,
     VideoOff,
 } from "lucide-react";
-import { QUALIDADES_TELA, useControleVoz, type QualidadeTela } from "../../contexto/ControleVoz";
+import {
+    FPS_TELA, PRESETS_TELA, RESOLUCOES_TELA, configPesada, presetDaConfig, useControleVoz,
+} from "../../contexto/ControleVoz";
 import { useCliqueFora } from "../../hooks/useCliqueFora";
 import { estaDigitando } from "../../lib/util";
 import { Dica } from "../ui/Dica";
@@ -67,10 +69,12 @@ export function Controles({ onSair, semTela = false }: { onSair: () => void; sem
     );
 }
 
-// compartilhar tela: o botão começa/para; a seta ao lado abre qualidade e áudio
+// compartilhar tela: o botão começa/para; a seta ao lado abre qualidade e áudio.
+// Qualidade: presets prontos e, embaixo, resolução e fps separados pra quem quer escolher
 function ControleTela() {
     const { conectado, tela } = useControleVoz();
     const [aberto, setAberto] = useState(false);
+    const [personalizar, setPersonalizar] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const fechar = useCallback(() => setAberto(false), []);
     useCliqueFora(ref, aberto, fechar);
@@ -95,7 +99,11 @@ function ControleTela() {
             <Dica texto="Opções de compartilhamento">
                 <button
                     className={`controle controle-seta ${tela.ativa ? "controle-ligado" : ""} ${aberto ? "aberto" : ""}`}
-                    onClick={() => setAberto((v) => !v)}
+                    onClick={() => {
+                        // combinação que não é nenhum preset: já abre no seletor
+                        if (!aberto) setPersonalizar(!presetDaConfig(tela.config));
+                        setAberto(!aberto);
+                    }}
                     aria-label="Opções de compartilhamento"
                     aria-expanded={aberto}
                 >
@@ -107,26 +115,83 @@ function ControleTela() {
                 <div className="menu menu-cima menu-tela" role="dialog" aria-label="Opções de compartilhamento">
                     <span className="rotulo">Qualidade</span>
                     <div className="opcoes-tela" role="radiogroup" aria-label="Qualidade">
-                        {(Object.keys(QUALIDADES_TELA) as QualidadeTela[]).map((id) => {
-                            const perfil = QUALIDADES_TELA[id];
-                            const ativa = tela.qualidade === id;
+                        {PRESETS_TELA.map((preset) => {
+                            const ativa = presetDaConfig(tela.config)?.id === preset.id;
                             return (
                                 <button
-                                    key={id}
+                                    key={preset.id}
                                     role="radio"
                                     aria-checked={ativa}
                                     className={`opcao-tela ${ativa ? "ativa" : ""}`}
-                                    onClick={() => tela.definirQualidade(id)}
+                                    onClick={() => tela.definirConfig(preset.config)}
                                 >
                                     <span className="opcao-tela-radio" />
                                     <span className="opcao-tela-texto">
-                                        <strong>{perfil.titulo}</strong>
-                                        <span>{perfil.detalhe}</span>
+                                        <strong>{preset.titulo}</strong>
+                                        <span>{preset.detalhe}</span>
                                     </span>
                                 </button>
                             );
                         })}
                     </div>
+
+                    <button
+                        className={`personalizar-tela ${personalizar ? "aberto" : ""}`}
+                        onClick={() => setPersonalizar((v) => !v)}
+                        aria-expanded={personalizar}
+                    >
+                        <span>{presetDaConfig(tela.config) ? "Personalizar" : "Personalizado"}</span>
+                        <ChevronDown size={14} />
+                    </button>
+
+                    {personalizar && (
+                        <div className="personalizado-tela">
+                            <div className="seletor-tela">
+                                <span className="rotulo">Resolução</span>
+                                <div className="segmentos" role="radiogroup" aria-label="Resolução">
+                                    {RESOLUCOES_TELA.map((r) => (
+                                        <button
+                                            key={r.id}
+                                            role="radio"
+                                            aria-checked={tela.config.resolucao === r.id}
+                                            className={`segmento ${tela.config.resolucao === r.id ? "ativa" : ""}`}
+                                            onClick={() => tela.definirConfig({ resolucao: r.id })}
+                                        >
+                                            {r.titulo}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="seletor-tela">
+                                <span className="rotulo">FPS</span>
+                                <div className="segmentos" role="radiogroup" aria-label="FPS">
+                                    {FPS_TELA.map((fps) => (
+                                        <button
+                                            key={fps}
+                                            role="radio"
+                                            aria-checked={tela.config.fps === fps}
+                                            className={`segmento ${tela.config.fps === fps ? "ativa" : ""}`}
+                                            onClick={() => tela.definirConfig({ fps })}
+                                        >
+                                            {fps}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <p className="menu-tela-nota">
+                                {tela.config.resolucao === "nativa"
+                                    ? "Nativa: a resolução da tela que você compartilhar, até 4K. "
+                                    : ""}
+                                {configPesada(tela.config)
+                                    ? "Pesado: precisa de PC forte e internet muito boa."
+                                    : tela.config.fps === 15
+                                        ? "15 fps deixa texto e código mais nítidos."
+                                        : tela.config.fps === 60
+                                            ? "60 fps: se apertar, cai a resolução, não o fps."
+                                            : "Equilibra nitidez e fluidez."}
+                            </p>
+                        </div>
+                    )}
 
                     <label className="opcao-audio">
                         <input type="checkbox" checked={tela.comAudio} onChange={(e) => tela.definirAudio(e.target.checked)} />

@@ -5,12 +5,13 @@ import {
 } from "@livekit/components-react";
 import { ConnectionQuality, Track } from "livekit-client";
 import {
-    Eye, EyeOff, Loader2, Maximize2, MicOff, Minimize2, MonitorUp, Pin, PinOff, Volume1, Volume2, VolumeX, WifiOff,
+    Activity, Eye, EyeOff, Loader2, Maximize2, MicOff, Minimize2, MonitorUp, Pin, PinOff, Volume1, Volume2, VolumeX, WifiOff,
 } from "lucide-react";
 import type { Usuario } from "../../api";
 import { useControleVoz, type TipoVolume } from "../../contexto/ControleVoz";
 import { useCliqueFora } from "../../hooks/useCliqueFora";
 import { usePublicando } from "../../hooks/usePublicando";
+import { useStatsTela, type StatsVideo } from "../../lib/statsTela";
 import { avatarReal } from "../../lib/util";
 import type { MapaMembros } from "../../tipos";
 import { Avatar } from "../ui/Avatar";
@@ -48,6 +49,8 @@ export function Bloco({ trackRef, membros, eu, modo, largura, onFocar, onDesfoca
     const { volumeDe } = useControleVoz();
     // a sua tela fica escondida por padrão: se for a tela inteira, a prévia se repete dentro dela
     const [previa, setPrevia] = useState(false);
+    // painel no canto com o que está passando de verdade (resolução, fps...)
+    const [verStats, setVerStats] = useState(false);
 
     // antes de conectar, o participante local ainda não tem identity: usa os seus dados
     const local = participante.isLocal;
@@ -63,6 +66,9 @@ export function Bloco({ trackRef, membros, eu, modo, largura, onFocar, onDesfoca
 
     const tipoVolume: TipoVolume | null = local ? null : ehTela ? (semAudioNaTela ? null : "tela") : "voz";
     const silenciadoPorVoce = !local && !ehTela && volumeDe(participante.identity, "voz") === 0;
+
+    const statsAbertas = verStats && ehTela && modo !== "miniatura";
+    const { envio, recepcao } = useStatsTela(trackRef, statsAbertas);
 
     const clicavel = modo !== "destaque" && !!onFocar;
     const rotulo = ehTela ? (local ? "Sua tela" : `Tela de ${nome}`) : nome;
@@ -106,12 +112,19 @@ export function Bloco({ trackRef, membros, eu, modo, largura, onFocar, onDesfoca
 
             {ehTela && <span className="bloco-ao-vivo">Ao vivo</span>}
 
+            {statsAbertas && <PainelStats local={local} envio={envio} recepcao={recepcao} />}
+
             {modo !== "miniatura" && (
                 // cliques aqui não podem chegar no quadro (que põe em destaque / tela cheia)
                 <div className="bloco-acoes" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                     {minhaTela && (
                         <AcaoBloco dica={previa ? "Esconder a prévia" : "Ver a prévia"} onClick={() => setPrevia((v) => !v)}>
                             {previa ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </AcaoBloco>
+                    )}
+                    {ehTela && isTrackReference(trackRef) && (
+                        <AcaoBloco dica={verStats ? "Esconder estatísticas" : "Estatísticas da transmissão"} ativo={verStats} onClick={() => setVerStats((v) => !v)}>
+                            <Activity size={16} />
                         </AcaoBloco>
                     )}
                     {tipoVolume && <ControleVolume usuarioId={participante.identity} tipo={tipoVolume} nome={nome} />}
@@ -140,6 +153,48 @@ export function Bloco({ trackRef, membros, eu, modo, largura, onFocar, onDesfoca
                 {silenciadoPorVoce && <VolumeX size={13} className="bloco-mudo" aria-label="Silenciado por você" />}
                 {quality === ConnectionQuality.Poor && <WifiOff size={13} className="bloco-sinal" aria-label="Conexão instável" />}
             </div>
+        </div>
+    );
+}
+
+// 2560×1440 · 60 fps · VP9 · 12,3 Mbps
+function descrever(s: StatsVideo) {
+    const taxa = s.kbps >= 1000
+        ? `${(s.kbps / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} Mbps`
+        : `${s.kbps} kbps`;
+    const partes = [s.largura && s.altura ? `${s.largura}×${s.altura}` : "sem imagem", `${s.fps} fps`];
+    if (s.codec) partes.push(s.codec);
+    partes.push(taxa);
+    return partes.join(" · ");
+}
+
+const LIMITACAO = { cpu: "limitado pelo processador", bandwidth: "limitado pela rede" } as const;
+
+type StatsProps = { local: boolean; envio: StatsVideo | null; recepcao: StatsVideo | null };
+
+// o que quem compartilha está mandando e o que chega pra você. A recepção pode ser menor que o envio:
+// cada um recebe a camada que cabe no tamanho do quadro e na própria rede
+function PainelStats({ local, envio, recepcao }: StatsProps) {
+    const menorQueEnviado = !!envio && !!recepcao && recepcao.altura > 0 && recepcao.altura < envio.altura;
+    return (
+        <div className="bloco-stats" aria-live="off">
+            <span className="bloco-stats-rotulo">{local ? "Você transmite" : "Transmitindo"}</span>
+            <span>
+                {envio ? descrever(envio) : local ? "medindo…" : "aguardando quem compartilha…"}
+                {envio?.limitacao && <em> · {LIMITACAO[envio.limitacao]}</em>}
+            </span>
+            {!local && (
+                <>
+                    <span className="bloco-stats-rotulo">Você recebe</span>
+                    <span>
+                        {recepcao ? descrever(recepcao) : "medindo…"}
+                        {!!recepcao?.perda && recepcao.perda >= 0.1 && (
+                            <em> · {recepcao.perda.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% perdido</em>
+                        )}
+                    </span>
+                    {menorQueEnviado && <span className="bloco-stats-nota">Menor que o enviado: ajustado ao tamanho do quadro e à sua rede.</span>}
+                </>
+            )}
         </div>
     );
 }

@@ -363,6 +363,11 @@ export function texturaCracha(nome: string) {
     return texturaTexto([nome], { largura, altura: 76, fundo: "rgba(9, 9, 11, 0.72)", tamanho, raio: 38 });
 }
 
+// etiqueta do cargo (dono / admin), em cima do crachá
+export function texturaPapel(texto: string) {
+    return texturaTexto([texto], { largura: 200, altura: 64, fundo: "rgba(34, 34, 38, 0.9)", cor: "#d9b77e", tamanho: 34, peso: 700, raio: 32 });
+}
+
 // avatar sem foto (ou com foto que não carregou): iniciais num círculo
 export function texturaIniciais(iniciais: string, fundo: string) {
     const { canvas, ctx } = tela(256, 256);

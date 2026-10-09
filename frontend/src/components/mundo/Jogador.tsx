@@ -1,4 +1,4 @@
-// Você em primeira pessoa: mouse (com o ponteiro travado) ou toque pra olhar,
+// Você em primeira pessoa (ou em terceira, com a câmera atrás da cabeça): mouse (com o ponteiro travado) ou toque pra olhar,
 // WASD/setas ou o joystick da tela pra andar. Esbarra nas paredes e nos móveis,
 // sobe os degraus do cinema, pula (Espaço ou rodinha pra baixo), anda devagar (Shift) e senta.
 // Ctrl (um toque, como no CoD): parado agacha/levanta; correndo, desliza e volta a ficar em pé.
@@ -57,6 +57,12 @@ const INTERVALO_TRAVAR = 200;
 const JANELA_TRAVAR = 3000;
 // o quanto a mira pode passar longe do centro do tablet e ainda contar
 const RAIO_MIRA_TABLET = 0.28;
+// terceira pessoa: a câmera fica atrás da cabeça e um pouco acima (pra cabeça não tapar a mira).
+// Ela é uma bolinha desse raio: bate em parede, móvel, teto e chão e chega mais perto
+const DISTANCIA_3P = 2.6;
+const ALTURA_3P = 0.3;
+const RAIO_CAMERA = 0.18;
+const PASSO_CAMERA = 0.1;
 
 export type ControleToque = {
     // joystick: -1..1 em cada eixo (y negativo = pra frente)
@@ -82,13 +88,15 @@ type Props = {
     pedido: RefObject<PedidoJogador | null>;
     // velocidade no chão agora (m/s), pro velocímetro
     velocidade: RefObject<number>;
+    // onde o seu boneco aparece (a posição entre os ticks, a mesma da câmera), pra terceira pessoa
+    visual: RefObject<Pose>;
     onSala: (salaId: string | null) => void;
     onFoco: (interativo: Interativo | null) => void;
     onTravado: (travado: boolean) => void;
     onPostura: (postura: number) => void;
 };
 
-export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, velocidade, onSala, onFoco, onTravado, onPostura }: Props) {
+export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, velocidade, visual, onSala, onFoco, onTravado, onPostura }: Props) {
     const { camera, gl } = useThree();
     const teclas = useRef(new Set<string>());
     // pulo apertado (tecla ou rodinha): vale pro próximo tick, e só se estiver no chão nele
@@ -124,6 +132,9 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
     // zoom com Ctrl + rodinha (1 = normal): o alvo muda na hora, a câmera chega nele suave
     const zoomAlvo = useRef(1);
     const zoom = useRef(1);
+    // terceira pessoa: a distância que a câmera quer (vai e volta suave ao trocar de visão) e a de
+    // agora (encurta na hora quando bate em algo e volta devagar quando libera)
+    const recuo = useRef({ quer: lerConfig().terceiraPessoa ? DISTANCIA_3P : 0, real: 0 });
     const sala = useRef<string | null>(null);
     const foco = useRef<string | null>(null);
     const postura = useRef<number>(POSTURA.EM_PE);
@@ -661,8 +672,16 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
         f.balancoRasteja += (rastejando - f.balancoRasteja) * Math.min(1, dt * 8);
         f.faseRasteja += velocidade.current * dt * 5;
         const puxa = Math.sin(f.faseRasteja) * f.balancoRasteja;
-        camera.position.set(x, f.cameraY + Math.abs(puxa) * 0.025, z);
-        camera.rotation.set(olhar.current.pitch, olhar.current.yaw, puxa * 0.025, "YXZ");
+        const { yaw, pitch } = olhar.current;
+        const r = recuarCamera(x, f.cameraY, z, yaw, pitch, cfg.terceiraPessoa ? DISTANCIA_3P : 0, dt);
+        // o balanço de rastejar é dos olhos: some conforme a câmera sai da cabeça
+        const balanco = puxa * 0.025 * (1 - r / DISTANCIA_3P);
+        camera.position.set(
+            x + Math.sin(yaw) * Math.cos(pitch) * r,
+            f.cameraY + Math.abs(balanco) - Math.sin(pitch) * r + (ALTURA_3P * r) / DISTANCIA_3P,
+            z + Math.cos(yaw) * Math.cos(pitch) * r,
+        );
+        camera.rotation.set(pitch, yaw, balanco, "YXZ");
 
         p.rot = olhar.current.yaw;
         p.pitch = olhar.current.pitch;
@@ -672,9 +691,41 @@ export function Jogador({ planta, pose, parado, portaFechada, toque, pedido, vel
             onPostura(novaPostura);
         }
 
+        Object.assign(visual.current, p, { x, y, z });
+
         atualizarSala(p);
         atualizarFoco(p, olhar.current.yaw, olhar.current.pitch, f.cameraY, !!f.assento);
     });
+
+    // terceira pessoa: anda com a câmera pra trás da cabeça em passos curtos até a distância
+    // desejada ou até bater em algo. Devolve a distância de agora (0 = primeira pessoa)
+    function recuarCamera(x: number, olhosY: number, z: number, yaw: number, pitch: number, alvo: number, dt: number) {
+        const rc = recuo.current;
+        rc.quer += (alvo - rc.quer) * (1 - Math.exp(-8 * dt));
+        if (Math.abs(alvo - rc.quer) < 0.005) rc.quer = alvo;
+        if (rc.quer < 0.01) {
+            rc.real = 0;
+            return 0;
+        }
+        const lista = solidos();
+        const tx = Math.sin(yaw) * Math.cos(pitch);
+        const ty = -Math.sin(pitch);
+        const tz = Math.cos(yaw) * Math.cos(pitch);
+        const passos = Math.ceil(rc.quer / PASSO_CAMERA);
+        let livre = 0;
+        for (let i = 1; i <= passos; i++) {
+            const d = (rc.quer * i) / passos;
+            const q = { x: x + tx * d, z: z + tz * d };
+            const cy = olhosY + ty * d + (ALTURA_3P * d) / DISTANCIA_3P;
+            if (cy > teto(q) - RAIO_CAMERA || cy < alturaChao(lista, q, cy) + RAIO_CAMERA) break;
+            // pés lá embaixo: assim qualquer coisa que passe da altura da bolinha conta (não só o
+            // que é alto demais pra subir andando)
+            if (!pontoLivre(lista, q, cy - RAIO_CAMERA - DEGRAU_MAXIMO, cy + RAIO_CAMERA, RAIO_CAMERA)) break;
+            livre = d;
+        }
+        rc.real = livre < rc.real ? livre : rc.real + (livre - rc.real) * (1 - Math.exp(-6 * dt));
+        return rc.real;
+    }
 
     function atualizarSala(p: Ponto) {
         const atual = planta.salas.find((s) => s.canalId === sala.current);

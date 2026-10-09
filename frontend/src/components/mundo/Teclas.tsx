@@ -39,6 +39,7 @@ const GRUPOS: { titulo: string; icone: ReactNode; atalhos: Atalho[] }[] = [
         icone: <Crosshair size={14} />,
         atalhos: [
             { teclas: ["Ctrl", "@rodinha"], junto: "+", texto: "Zoom" },
+            { teclas: ["V"], texto: "Mudar a visão", detalhe: "1ª / 3ª pessoa" },
             { teclas: ["O"], texto: "Configurações" },
             { teclas: ["Esc"], texto: "Soltar o mouse" },
         ],

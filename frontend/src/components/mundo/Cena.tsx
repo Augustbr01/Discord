@@ -13,7 +13,7 @@ import type { Participant, Room, Track } from "livekit-client";
 import type { ServidorDetalhe, Usuario } from "../../api";
 import type { EstadoLed } from "../../tipos";
 import { AudioEspacial, type SomDaTV } from "./AudioEspacial";
-import { Boneco } from "./Boneco";
+import { Boneco, type Papel } from "./Boneco";
 import { useConfigMundo } from "./config";
 import { Destaque } from "./Destaque";
 import { Elevador } from "./Elevador";
@@ -33,6 +33,8 @@ export type Pessoa = {
     // a tela compartilhada dela só aparece pra você depois de clicar no selo
     telaAberta: boolean;
     telaMirada: boolean;
+    // cargo no servidor: aparece uma etiqueta em cima do nome
+    papel: Papel;
 };
 
 type Props = {
@@ -40,6 +42,8 @@ type Props = {
     servidor: ServidorDetalhe;
     andar: number;
     pose: RefObject<Pose>;
+    // você: o seu boneco aparece na terceira pessoa
+    eu: Usuario;
     pessoas: Pessoa[];
     posicoes: Map<string, Ponto>;
     pessoasPorSala: Map<string, number>;
@@ -153,9 +157,13 @@ function Luzes({ escuro, telao }: { escuro: boolean; telao: Props["telao"] }) {
 }
 
 // o andar em si (entra no CanvasMundo pelo túnel)
+const SEM_TELAS: Track[] = [];
+
 export function Cena(props: Props) {
     const { planta, pose } = props;
     const { mostrarHitbox } = useConfigMundo();
+    // onde o Jogador desenha você (entre os ticks da física), pro seu boneco ir junto com a câmera
+    const visual = useRef<Pose>({ ...pose.current });
 
     return (
         <>
@@ -188,6 +196,7 @@ export function Cena(props: Props) {
                         telas={p.telas}
                         telaAberta={p.telaAberta}
                         telaMirada={p.telaMirada}
+                        papel={p.papel}
                         alvosTela={props.alvosTela}
                         posicoes={props.posicoes}
                         solidos={planta.solidos}
@@ -207,7 +216,23 @@ export function Cena(props: Props) {
                 onTravado={props.onTravado}
                 onPostura={props.onPostura}
                 velocidade={props.velocidade}
+                visual={visual}
             />
+            {/* depois do Jogador: lê a posição já deste quadro (antes, ficaria um quadro atrás da câmera) */}
+            <Suspense fallback={null}>
+                <Boneco
+                    usuario={props.eu}
+                    lerAlvo={() => visual.current}
+                    telas={SEM_TELAS}
+                    telaAberta={false}
+                    telaMirada={false}
+                    papel={null}
+                    proprio
+                    alvosTela={props.alvosTela}
+                    posicoes={props.posicoes}
+                    solidos={planta.solidos}
+                />
+            </Suspense>
             <MiraTelas alvos={props.alvosTela} onMira={props.onMiraTela} />
             <AudioEspacial sala={props.sala} posicoes={props.posicoes} surdo={props.surdo} tv={props.somTV} proximidade={props.proximidade} />
         </>

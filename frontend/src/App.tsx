@@ -33,6 +33,7 @@ import { NovoCanal } from "./components/modais/NovoCanal";
 import { NovoServidor, type AbaServidor } from "./components/modais/NovoServidor";
 import { DeixarServidor, type ModoDeixar } from "./components/modais/DeixarServidor";
 import { RemoverMembro, type ModoRemocao } from "./components/modais/RemoverMembro";
+import { TelaCarregando } from "./components/mundo/TelaCarregando";
 import { PainelCanais } from "./components/PainelCanais";
 import { Paleta, type ItemPaleta } from "./components/Paleta";
 import { SemServidor } from "./components/SemServidor";
@@ -926,10 +927,7 @@ function Aplicacao() {
 function MundoCarregando() {
     return (
         <div className="mundo">
-            <div className="mundo-carregando">
-                <Loader2 size={20} className="girar" />
-                <span>Abrindo o prédio…</span>
-            </div>
+            <TelaCarregando texto="Abrindo o prédio…" />
         </div>
     );
 }
