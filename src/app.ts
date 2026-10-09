@@ -24,7 +24,9 @@ if(!JWT_SECRET || !MODO || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !LIVE
     throw new Error("FALTANDO .ENV DO APP");
 }
 
-const app = fastify().withTypeProvider<TypeBoxTypeProvider>();
+// atrás do Caddy da VPS (docker-compose.producao.yml): o IP de quem acessa vem no X-Forwarded-For,
+// senão todo mundo chegaria com o IP do Caddy e dividiria o mesmo limite de requisições
+const app = fastify({ trustProxy: process.env.TRUST_PROXY === "true" }).withTypeProvider<TypeBoxTypeProvider>();
 
 app.register(swagger, {
     openapi: {
@@ -92,7 +94,8 @@ app.register(routeWebSocket,{prefix:"/api"});
 app.register(RotaAuth, {prefix:"/api"});
 app.register(LiveKit,{prefix:"/api"});
 
-app.listen({port:3000}, (error) => {
+// no container precisa ser 0.0.0.0 (HOST no compose); rodando direto, só a própria máquina acessa
+app.listen({port:3000, host: process.env.HOST ?? "localhost"}, (error) => {
     console.log("ligou");
     // quem está em cada call: confere com o LiveKit de tempos em tempos (não depende só do webhook)
     iniciarSincronizacaoCalls(canaisComGente);

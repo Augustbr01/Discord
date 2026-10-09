@@ -1,0 +1,8 @@
+# o que não vai pra imagem do backend
+node_modules
+generated
+dist
+frontend
+desktop
+.env
+.git
