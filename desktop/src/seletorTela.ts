@@ -1,7 +1,7 @@
 // compartilhar tela: o Electron não tem o seletor do Chrome, então o getDisplayMedia do site cai
 // aqui e a gente mostra o nosso (seletor.html). No macOS 15+ vai o seletor do próprio sistema,
 // e no Linux com Wayland quem escolhe é o portal do sistema (aí já vem uma fonte só)
-import { BrowserWindow, desktopCapturer, ipcMain, session, type DesktopCapturerSource } from "electron";
+import { BrowserWindow, desktopCapturer, ipcMain, session, type DesktopCapturerSource, type Streams } from "electron";
 import path from "node:path";
 import { CANAIS, type FonteTela } from "./canais";
 import { ehDoSite } from "./config";
@@ -71,7 +71,15 @@ export function configurarSeletorTela(principal: () => BrowserWindow | null) {
     });
 
     session.defaultSession.setDisplayMediaRequestHandler(
-        async (pedido, responder) => {
+        async (pedido, responderUmaVez) => {
+            // o Electron trava o pedido se a resposta lançar erro, e lança se for chamada duas vezes:
+            // aí o getDisplayMedia do site nunca termina (botão carregando pra sempre)
+            let respondido = false;
+            const responder = (resposta: Streams | null) => {
+                if (respondido) return;
+                respondido = true;
+                responderUmaVez(resposta);
+            };
             const pai = principal();
             if (!pai || aberto || !ehDoSite(pedido.frame?.url ?? pedido.securityOrigin)) return responder(null);
             try {
@@ -84,9 +92,11 @@ export function configurarSeletorTela(principal: () => BrowserWindow | null) {
                 const comAudio = pedido.audioRequested && AUDIO_DO_SISTEMA;
                 const escolhida = WAYLAND && fontes.length === 1 ? fontes[0] : await escolherFonte(pai, fontes, comAudio);
                 if (!escolhida) return responder(null);
-                responder({ video: escolhida, audio: comAudio ? "loopback" : undefined });
+                // sem som: a chave `audio` fica de fora (com undefined o Electron recusa a resposta)
+                responder(comAudio ? { video: escolhida, audio: "loopback" } : { video: escolhida });
             } catch (err) {
-                console.error("[tela] não deu pra listar as fontes", err);
+                // no Wayland o portal às vezes não abre o PipeWire a tempo: a próxima tentativa costuma ir
+                console.error("[tela] não deu pra compartilhar", err);
                 responder(null);
             }
         },
