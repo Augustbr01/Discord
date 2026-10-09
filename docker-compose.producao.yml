@@ -1,58 +1,35 @@
-# produção na VPS: banco, backend e o site.
+# produção na VPS: o backend e o site.
 #   docker compose -f docker-compose.producao.yml up -d --build
 # As variáveis vêm do .env do lado deste arquivo (modelo em .env.exemplo).
-# O domínio e o HTTPS ficam com o Caddy da VPS, na rede docker "web": só o site (nginx) entra
-# nela, como liberdade, e repassa /api pro backend. Banco e backend ficam na rede do projeto.
-# No Caddyfile de lá:
-#   liberdade.augustdev.com.br {
-#       reverse_proxy liberdade:80
-#   }
+# Tudo fica na rede docker "web", a mesma do Caddy e do Postgres que já rodam na VPS:
+# - o Caddy cuida do domínio e do HTTPS e manda tudo pro site (nginx), que repassa /api pro backend.
+#   No Caddyfile de lá:
+#     liberdade.augustdev.com.br {
+#         reverse_proxy liberdade:80
+#     }
+# - o banco é o do DATABASE_URL do .env, pelo nome do container dele na rede
 # O docker-compose.yml continua sendo o banco de desenvolvimento.
 services:
-  db:
-    image: postgres:18
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - db-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  backend:
+  liberdade-backend:
     build: .
     restart: unless-stopped
     env_file: .env
     environment:
-      # o banco é o container db (o DATABASE_URL do .env fica valendo só fora do compose)
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       HOST: 0.0.0.0
       # o IP de quem acessa vem no X-Forwarded-For (Caddy da VPS → nginx)
       TRUST_PROXY: "true"
-    depends_on:
-      db:
-        condition: service_healthy
+    networks:
+      - web
 
   # o nome do serviço é o endereço que o Caddy da VPS usa (liberdade:80)
   liberdade:
     build: ./frontend
     restart: unless-stopped
     networks:
-      # a rede do projeto, pra alcançar o backend
-      default:
-      # a do Caddy da VPS
-      web:
+      - web
     depends_on:
-      - backend
+      - liberdade-backend
 
 networks:
   web:
     external: true
-
-volumes:
-  db-data:
