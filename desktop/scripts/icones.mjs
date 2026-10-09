@@ -36,8 +36,13 @@ const ponto = `
 const gerar = (svg, tamanho, destino) =>
     sharp(Buffer.from(svg), { density: 72 * Math.ceil(tamanho / 24) * 2 }).resize(tamanho, tamanho).png().toFile(destino);
 
+// Linux: um por tamanho que o tema de ícones (hicolor) conhece. Só o de 1024 o GNOME não acha
+const TAMANHOS_LINUX = [16, 24, 32, 48, 64, 128, 256, 512];
+
 mkdirSync("assets", { recursive: true });
+mkdirSync("build/icons", { recursive: true });
 await Promise.all([
+    ...TAMANHOS_LINUX.map((t) => gerar(ladrilho(), t, `build/icons/${t}x${t}.png`)),
     // electron-builder gera o .ico (Windows) e o .icns (macOS) a partir deste
     gerar(ladrilho(), 1024, "build/icon.png"),
     gerar(ladrilho(), 512, "assets/icone.png"),
