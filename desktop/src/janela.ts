@@ -121,6 +121,8 @@ export function criarJanela(inicial: string, oculta: boolean) {
             sandbox: true,
             nodeIntegration: false,
             spellcheck: true,
+            // som da chamada e o AudioContext do som da tela (preload.ts) tocam sem esperar clique
+            autoplayPolicy: "no-user-gesture-required",
         },
     });
     // macOS usa o corretor do sistema; nos outros, português

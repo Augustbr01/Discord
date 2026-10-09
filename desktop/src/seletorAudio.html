@@ -87,11 +87,14 @@
 
     <script>
         const lista = document.querySelector(".lista");
+        // [{ id, nome }]: no Linux o programa no PipeWire, no Windows a janela (id = pid)
         let programas = [];
-        // { tipo: "programa", nome } | { tipo: "tudo" } | { tipo: "nenhum" }
+        // { tipo: "programa", id, nome } | { tipo: "tudo" } | { tipo: "nenhum" }
         let escolha = null;
+        let podeTudo = false;
+        let rotulo = "";
 
-        const igual = (a, b) => a && b && a.tipo === b.tipo && a.nome === b.nome;
+        const igual = (a, b) => a && b && a.tipo === b.tipo && a.id === b.id;
 
         function opcao(titulo, detalhe, valor) {
             const botao = document.createElement("button");
@@ -124,31 +127,37 @@
 
         function desenhar() {
             const foco = document.activeElement?.textContent;
-            lista.replaceChildren(grupo("Programas tocando agora"));
+            lista.replaceChildren(grupo(rotulo));
             if (programas.length === 0) {
                 const vazio = document.createElement("p");
                 vazio.className = "vazio";
-                vazio.textContent = "Nenhum programa tocando som agora. Dê play no que você quer compartilhar e ele aparece aqui.";
+                vazio.textContent = podeTudo
+                    ? "Nenhum programa tocando som agora. Dê play no que você quer compartilhar e ele aparece aqui."
+                    : "Nenhuma janela aberta. Abra o programa que você quer compartilhar e ele aparece aqui.";
                 lista.append(vazio);
             }
-            for (const nome of programas) lista.append(opcao(nome, null, { tipo: "programa", nome }));
-            lista.append(
-                grupo("Outras opções"),
-                opcao("Todo o som do computador", "Todos os programas, menos o Liberdade", { tipo: "tudo" }),
-                opcao("Sem som", "Só a imagem", { tipo: "nenhum" }),
-            );
+            for (const p of programas) lista.append(opcao(p.nome, null, { tipo: "programa", id: p.id, nome: p.nome }));
+            lista.append(grupo("Outras opções"));
+            if (podeTudo) lista.append(opcao("Todo o som do computador", "Todos os programas, menos o Liberdade", { tipo: "tudo" }));
+            lista.append(opcao("Sem som", "Só a imagem", { tipo: "nenhum" }));
             // a lista é redesenhada a cada segundo: o foco do teclado continua onde estava
             if (foco) [...lista.querySelectorAll(".opcao")].find((b) => b.textContent === foco)?.focus();
         }
 
         async function atualizar() {
             const r = await window.seletor.programas();
-            const mudou = r.programas.join("\n") !== programas.join("\n");
+            const chave = (lista) => lista.map((p) => p.id + "\t" + p.nome).join("\n");
+            const mudou = chave(r.programas) !== chave(programas);
             programas = r.programas;
+            podeTudo = r.podeTudo;
+            rotulo = r.rotulo;
             if (!escolha) {
-                // o último que você escolheu, se estiver tocando; senão o único tocando; senão todo o som
-                const ultimaTocando = r.ultima.tipo === "programa" && programas.includes(r.ultima.nome);
-                escolha = ultimaTocando ? r.ultima : programas.length === 1 ? { tipo: "programa", nome: programas[0] } : { tipo: "tudo" };
+                // o último que você escolheu (pelo nome: no Windows o pid muda), se estiver na lista;
+                // senão o único da lista; senão todo o som (ou nenhum, onde não dá pra pegar tudo)
+                const ultima = r.ultima.tipo === "programa" ? programas.find((p) => p.nome === r.ultima.nome) : null;
+                const unico = programas.length === 1 ? programas[0] : null;
+                const programa = ultima ?? unico;
+                escolha = programa ? { tipo: "programa", id: programa.id, nome: programa.nome } : { tipo: podeTudo ? "tudo" : "nenhum" };
                 desenhar();
             } else if (mudou) {
                 desenhar();

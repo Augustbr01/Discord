@@ -176,9 +176,8 @@
             if (e.key === "Enter" && escolhida && !e.target.closest?.(".aba, #cancelar")) window.seletor.escolher(escolhida);
         });
 
-        window.seletor.fontes().then((r) => {
-            fontes = r.fontes;
-            document.querySelector(".nota").textContent = r.comAudio ? "O som do computador vai junto." : "";
+        window.seletor.fontes().then((lista) => {
+            fontes = lista;
             // uma tela só: já vem marcada, é só confirmar
             const telas = fontes.filter((f) => f.tipo === "tela");
             if (telas.length === 1) escolhida = telas[0].id;

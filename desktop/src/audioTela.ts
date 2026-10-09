@@ -1,79 +1,26 @@
-// som da tela no Linux. O Chromium só captura o som do sistema no Windows, então aqui o venmic
-// (o mesmo do Vesktop) cria no PipeWire um microfone virtual, "vencord-screen-share", e liga nele
-// só o programa escolhido. O site pega esse microfone e junta com a tela (ver preload.ts).
-// O som do próprio Liberdade nunca entra: senão os outros se ouviriam de volta
-import { app, BrowserWindow, ipcMain } from "electron";
+// som junto com a tela, de um programa só. O Chromium só captura o som do computador inteiro (e só
+// no Windows), com as vozes da chamada junto: os outros se ouviriam de volta. Aqui você escolhe o
+// programa e cada sistema captura do seu jeito (somLinux.ts, somWindows.ts); o preload junta o som
+// na tela que o site recebe. O som do próprio Liberdade nunca entra
+import { app, BrowserWindow, ipcMain, type WebContents } from "electron";
 import path from "node:path";
-import { CANAIS, type EscolhaAudio } from "./canais";
+import { CANAIS, type EscolhaAudio, type ModoAudio } from "./canais";
 import { ehDoSite } from "./config";
+import { somLinux } from "./somLinux";
+import { somWindows } from "./somWindows";
 
-type Venmic = typeof import("@vencord/venmic");
-type No = Record<string, string>;
+const sistema = process.platform === "linux" ? somLinux : process.platform === "win32" ? somWindows : null;
 
-let venmic: InstanceType<Venmic["PatchBay"]> | null | undefined;
-
-function patchBay() {
-    if (venmic !== undefined) return venmic;
-    venmic = null;
-    if (process.platform !== "linux") return venmic;
-    try {
-        // fica fora do bundle (é binário nativo) e só existe no Linux
-        const { PatchBay } = require("@vencord/venmic") as Venmic;
-        if (PatchBay.hasPipeWire()) venmic = new PatchBay();
-        else console.warn("[audio] sem PipeWire: a tela vai sem som");
-    } catch (err) {
-        console.error("[audio] não deu pra carregar o venmic", err);
-    }
-    return venmic;
-}
-
-export const audioDisponivel = () => patchBay() !== null;
-
-// o processo que toca o som do Liberdade (as vozes da chamada)
-function nosDoApp(): No[] {
-    const pid = app.getAppMetrics().find((p) => p.name === "Audio Service")?.pid;
-    return [{ "application.name": app.getName() }, ...(pid ? [{ "application.process.id": String(pid) }] : [])];
-}
-const ehDoApp = (no: No) => nosDoApp().some((n) => Object.entries(n).every(([k, v]) => no[k] === v));
-
-const nomeDoNo = (no: No) => no["application.name"] || no["node.name"] || "";
-
-// programas tocando som agora (cada um pode ter várias saídas: aparece uma vez)
-function listarProgramas() {
-    const nomes = new Set<string>();
-    for (const no of patchBay()?.list() ?? []) {
-        if (no["media.class"] !== "Stream/Output/Audio" || ehDoApp(no)) continue;
-        const nome = nomeDoNo(no);
-        if (nome) nomes.add(nome);
-    }
-    return [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
-}
-
-function ligar(escolha: EscolhaAudio) {
-    const pb = patchBay();
-    if (!pb || escolha.tipo === "nenhum") return false;
-    // microfones e outras gravações não entram, nem o som do Liberdade
-    const exclude: No[] = [...nosDoApp(), { "media.class": "Stream/Input/Audio" }];
-    const include: No[] = escolha.tipo === "programa" ? [{ "application.name": escolha.nome }] : [];
-    try {
-        return pb.link({ include, exclude, ignore_devices: true, only_speakers: false, mute: false });
-    } catch (err) {
-        console.error("[audio] não deu pra ligar o microfone virtual", err);
-        return false;
-    }
-}
+// macOS: o som vem pelo próprio seletor do sistema
+export const audioDisponivel = () => sistema?.disponivel() ?? false;
 
 export function pararAudio() {
-    try {
-        patchBay()?.unlink();
-    } catch (err) {
-        console.error("[audio] não deu pra desligar o microfone virtual", err);
-    }
+    sistema?.parar();
 }
 
-// a tela que está saindo agora leva o microfone virtual? O site pergunta uma vez, logo depois do getDisplayMedia
-let entregar = false;
-// o último programa escolhido já vem marcado da próxima vez
+// a tela que está saindo agora leva som? O site pergunta uma vez, logo depois do getDisplayMedia
+let entregar: ModoAudio | null = null;
+// a última escolha já vem marcada da próxima vez (pelo nome: no Windows o pid muda)
 let ultima: EscolhaAudio = { tipo: "tudo" };
 
 let aberto: { janela: BrowserWindow; responder: (escolha: EscolhaAudio) => void } | null = null;
@@ -117,34 +64,37 @@ function perguntar(pai: BrowserWindow) {
 
 // chamado pelo seletorTela depois de escolher a tela, quando o site pediu som
 export async function escolherAudio(pai: BrowserWindow) {
+    if (!sistema) return;
     pararAudio();
-    entregar = false;
+    entregar = null;
     const escolha = await perguntar(pai);
     if (escolha.tipo !== "nenhum") ultima = escolha;
-    entregar = ligar(escolha);
+    if (await sistema.ligar(escolha, pai.webContents)) entregar = sistema.modo;
 }
 
 function valida(escolha: unknown): EscolhaAudio {
-    const e = escolha as Partial<{ tipo: string; nome: unknown }> | null;
-    if (e?.tipo === "programa" && typeof e.nome === "string") return { tipo: "programa", nome: e.nome };
-    if (e?.tipo === "tudo") return { tipo: "tudo" };
+    const e = escolha as Partial<{ tipo: string; id: unknown; nome: unknown }> | null;
+    if (e?.tipo === "programa" && typeof e.id === "string" && typeof e.nome === "string") return { tipo: "programa", id: e.id, nome: e.nome };
+    if (e?.tipo === "tudo" && sistema?.podeTudo) return { tipo: "tudo" };
     return { tipo: "nenhum" };
 }
 
+const doSeletor = (wc: WebContents) => !!aberto && wc === aberto.janela.webContents;
+
 export function configurarAudioTela() {
-    ipcMain.handle(CANAIS.programas, (e) => {
-        if (!aberto || e.sender !== aberto.janela.webContents) return { programas: [], ultima };
-        return { programas: listarProgramas(), ultima };
+    ipcMain.handle(CANAIS.programas, async (e) => {
+        const base = { ultima, podeTudo: sistema?.podeTudo ?? false, rotulo: sistema?.rotulo ?? "" };
+        if (!sistema || !doSeletor(e.sender)) return { ...base, programas: [] };
+        return { ...base, programas: await sistema.listar() };
     });
     ipcMain.on(CANAIS.escolherAudio, (e, escolha: unknown) => {
-        if (!aberto || e.sender !== aberto.janela.webContents) return;
-        aberto.responder(valida(escolha));
+        if (doSeletor(e.sender)) aberto?.responder(valida(escolha));
     });
     ipcMain.handle(CANAIS.audioDaTela, (e) => {
-        if (!ehDoSite(e.senderFrame?.url)) return false;
-        const sim = entregar;
-        entregar = false;
-        return sim;
+        if (!ehDoSite(e.senderFrame?.url)) return null;
+        const modo = entregar;
+        entregar = null;
+        return modo;
     });
     ipcMain.on(CANAIS.pararAudio, (e) => {
         if (ehDoSite(e.senderFrame?.url)) pararAudio();

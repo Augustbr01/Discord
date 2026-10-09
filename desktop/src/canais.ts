@@ -11,16 +11,24 @@ export const CANAIS = {
     // seletor de tela: lista as fontes e devolve a escolhida (ou null, cancelou)
     fontes: "liberdade:seletor-fontes",
     escolher: "liberdade:seletor-escolher",
-    // seletor de som (Linux): os programas tocando agora e o escolhido
+    // seletor de som (Linux e Windows): os programas que podem mandar som e o escolhido
     programas: "liberdade:audio-programas",
     escolherAudio: "liberdade:audio-escolher",
-    // site → main: a tela que acabou de vir leva som? E: parou, pode desligar o microfone virtual
+    // site → main: a tela que acabou de vir leva som, e como? E: parou, pode desligar a captura
     audioDaTela: "liberdade:audio-da-tela",
     pararAudio: "liberdade:audio-parar",
+    // main → site (Windows): o som capturado, em PCM 16 bits estéreo 48 kHz
+    pcm: "liberdade:audio-pcm",
 } as const;
 
-// de onde sai o som da tela no Linux: um programa, todos (menos o Liberdade) ou nenhum
-export type EscolhaAudio = { tipo: "programa"; nome: string } | { tipo: "tudo" } | { tipo: "nenhum" };
+// um programa que pode mandar som: no Linux o id é o nome dele no PipeWire, no Windows o pid
+export type Programa = { id: string; nome: string };
+
+// de onde sai o som da tela: um programa, todos (menos o Liberdade, só no Linux) ou nenhum
+export type EscolhaAudio = ({ tipo: "programa" } & Programa) | { tipo: "tudo" } | { tipo: "nenhum" };
+
+// como o som chega no site: microfone virtual (Linux) ou PCM pelo IPC (Windows)
+export type ModoAudio = "virtual" | "pcm";
 
 export type Atalho = "mic" | "surdo";
 

@@ -8,12 +8,11 @@ import { CANAIS, type FonteTela } from "./canais";
 import { ehDoSite } from "./config";
 
 const WAYLAND = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
-// áudio do sistema junto com a tela: o Chromium só consegue no Windows. No Linux vai pelo venmic
-// (audioTela.ts): um programa só, escolhido depois da tela
-const AUDIO_DO_SISTEMA = process.platform === "win32";
+// o som não vem daqui: o Chromium só pega o do computador inteiro, com as vozes da chamada junto.
+// Ele é escolhido depois da tela, um programa só (audioTela.ts)
 
 // um seletor aberto por vez: o pedido que chega com um aberto é recusado
-let aberto: { janela: BrowserWindow; fontes: FonteTela[]; comAudio: boolean; responder: (id: string | null) => void } | null = null;
+let aberto: { janela: BrowserWindow; fontes: FonteTela[]; responder: (id: string | null) => void } | null = null;
 
 function paraFonte(f: DesktopCapturerSource): FonteTela {
     return {
@@ -25,7 +24,7 @@ function paraFonte(f: DesktopCapturerSource): FonteTela {
     };
 }
 
-function escolherFonte(pai: BrowserWindow, fontes: DesktopCapturerSource[], comAudio: boolean) {
+function escolherFonte(pai: BrowserWindow, fontes: DesktopCapturerSource[]) {
     return new Promise<DesktopCapturerSource | null>((resolver) => {
         const janela = new BrowserWindow({
             parent: pai,
@@ -54,7 +53,7 @@ function escolherFonte(pai: BrowserWindow, fontes: DesktopCapturerSource[], comA
             resolver(fontes.find((f) => f.id === id) ?? null);
             if (!janela.isDestroyed()) janela.close();
         };
-        aberto = { janela, fontes: fontes.map(paraFonte), comAudio, responder };
+        aberto = { janela, fontes: fontes.map(paraFonte), responder };
         // fechou no X: é o mesmo que cancelar
         janela.on("closed", () => responder(null));
         janela.once("ready-to-show", () => janela.show());
@@ -64,8 +63,8 @@ function escolherFonte(pai: BrowserWindow, fontes: DesktopCapturerSource[], comA
 
 export function configurarSeletorTela(principal: () => BrowserWindow | null) {
     ipcMain.handle(CANAIS.fontes, (e) => {
-        if (!aberto || e.sender !== aberto.janela.webContents) return { fontes: [], comAudio: false };
-        return { fontes: aberto.fontes, comAudio: aberto.comAudio };
+        if (!aberto || e.sender !== aberto.janela.webContents) return [];
+        return aberto.fontes;
     });
     ipcMain.on(CANAIS.escolher, (e, id: unknown) => {
         if (!aberto || e.sender !== aberto.janela.webContents) return;
@@ -91,12 +90,11 @@ export function configurarSeletorTela(principal: () => BrowserWindow | null) {
                     fetchWindowIcons: true,
                 });
                 if (fontes.length === 0) return responder(null);
-                const comAudio = pedido.audioRequested && AUDIO_DO_SISTEMA;
-                const escolhida = WAYLAND && fontes.length === 1 ? fontes[0] : await escolherFonte(pai, fontes, comAudio);
+                const escolhida = WAYLAND && fontes.length === 1 ? fontes[0] : await escolherFonte(pai, fontes);
                 if (!escolhida) return responder(null);
                 if (pedido.audioRequested && audioDisponivel()) await escolherAudio(pai);
-                // sem som: a chave `audio` fica de fora (com undefined o Electron recusa a resposta)
-                responder(comAudio ? { video: escolhida, audio: "loopback" } : { video: escolhida });
+                // só a imagem: a chave `audio` fica de fora (com undefined o Electron recusa a resposta)
+                responder({ video: escolhida });
             } catch (err) {
                 // no Wayland o portal às vezes não abre o PipeWire a tempo: a próxima tentativa costuma ir
                 console.error("[tela] não deu pra compartilhar", err);

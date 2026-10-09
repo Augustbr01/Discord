@@ -63,6 +63,19 @@
     "win": {
       "target": [
         "nsis"
+      ],
+      "extraResources": [
+        {
+          "from": "vendor/application-loopback",
+          "to": "application-loopback",
+          "filter": [
+            "*.exe",
+            "LICENSE"
+          ]
+        }
+      ],
+      "files": [
+        "!node_modules/@vencord/**"
       ]
     },
     "nsis": {
