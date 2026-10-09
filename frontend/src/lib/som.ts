@@ -1,4 +1,4 @@
-// sons curtos de entrada/saída de call, gerados via Web Audio (sem arquivo).
+// sons curtos de entrada/saída de call e de mutar, gerados via Web Audio (sem arquivo).
 // pra usar sons reais depois, troque o corpo por `new Audio("/sons/entrada.mp3").play()`.
 let ctx: AudioContext | null = null;
 
@@ -15,13 +15,11 @@ function contexto(): AudioContext | null {
     }
 }
 
-// entrada = duas notas subindo; saída = descendo
-export function somVoz(tipo: "entrada" | "saida") {
+function tocar(notas: number[]) {
     const c = contexto();
     if (!c) return;
     if (c.state === "suspended") void c.resume();
 
-    const notas = tipo === "entrada" ? [523.25, 783.99] : [783.99, 523.25];
     notas.forEach((freq, i) => {
         const osc = c.createOscillator();
         const gain = c.createGain();
@@ -37,4 +35,14 @@ export function somVoz(tipo: "entrada" | "saida") {
         osc.start(t);
         osc.stop(t + 0.18);
     });
+}
+
+// entrada = duas notas subindo; saída = descendo
+export function somVoz(tipo: "entrada" | "saida") {
+    tocar(tipo === "entrada" ? [523.25, 783.99] : [783.99, 523.25]);
+}
+
+// atalho global do app desktop (a janela pode estar escondida): uma nota, aguda ao ligar, grave ao desligar
+export function somAlternar(ligou: boolean) {
+    tocar([ligou ? 659.25 : 392]);
 }

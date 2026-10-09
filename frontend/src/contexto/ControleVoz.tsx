@@ -5,6 +5,8 @@ import {
 import {
     AudioPresets, ConnectionState, LocalVideoTrack, ScreenSharePresets, Track, VideoPreset, type TrackPublishOptions,
 } from "livekit-client";
+import { desktop } from "../lib/desktop";
+import { somAlternar } from "../lib/som";
 import { INTERVALO_STATS_MS, TOPICO_STATS_TELA, leitorDeEnvio } from "../lib/statsTela";
 import { lerArmazenado, salvarArmazenado } from "../lib/util";
 import { useToast } from "./Toasts";
@@ -237,6 +239,22 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
             if (micLigado) definirMic(false);
         }
     }, [surdo, micLigado, setSurdo, definirMic]);
+
+    // app desktop: atalhos globais e a bandeja alternam daqui, mesmo com a janela escondida
+    // (por isso o som: sem ele não dá pra saber se mutou). E a bandeja mostra o estado
+    useEffect(() => desktop?.aoAtalho((atalho) => {
+        if (atalho === "mic") {
+            somAlternar(!micLigado);
+            alternarMic();
+        } else {
+            somAlternar(surdo);
+            alternarSurdo();
+        }
+    }), [micLigado, surdo, alternarMic, alternarSurdo]);
+
+    useEffect(() => {
+        desktop?.definirVoz({ conectado, mic: micLigado, surdo });
+    }, [conectado, micLigado, surdo]);
 
     // ---------- câmera ----------
 

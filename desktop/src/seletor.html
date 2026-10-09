@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Compartilhar tela</title>
+    <style>
+        /* as mesmas cores do site (frontend/src/styles/base.css) */
+        :root {
+            --fundo-0: #09090b;
+            --fundo-2: #131315;
+            --fundo-3: #19191c;
+            --borda-2: #27272b;
+            --borda-3: #3a3a40;
+            --texto: #ededef;
+            --texto-2: #b4b4bb;
+            --texto-3: #85858e;
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex;
+            flex-direction: column;
+            background: var(--fundo-0);
+            color: var(--texto);
+            font: 14px/1.4 "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
+        }
+        header { padding: 18px 20px 0; }
+        h1 { margin: 0 0 14px; font-size: 16px; font-weight: 600; }
+        .abas { display: flex; gap: 4px; border-bottom: 1px solid var(--borda-2); }
+        .aba {
+            padding: 8px 12px;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            background: none;
+            color: var(--texto-3);
+            font: inherit;
+            cursor: pointer;
+        }
+        .aba:hover { color: var(--texto-2); }
+        .aba[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--texto); }
+        main { flex: 1; overflow-y: auto; padding: 16px 20px; }
+        .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .fonte {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px;
+            border: 1px solid var(--borda-2);
+            border-radius: 10px;
+            background: var(--fundo-2);
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+        .fonte:hover { background: var(--fundo-3); border-color: var(--borda-3); }
+        .fonte[aria-checked="true"] { border-color: var(--texto); box-shadow: 0 0 0 1px var(--texto); }
+        .fonte:focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+        .miniatura {
+            aspect-ratio: 16 / 9;
+            width: 100%;
+            border-radius: 6px;
+            background: #000;
+            object-fit: contain;
+        }
+        .nome { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--texto-2); }
+        .nome img { width: 16px; height: 16px; flex: none; }
+        .nome span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vazio { padding: 40px 0; color: var(--texto-3); text-align: center; }
+        footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 20px;
+            border-top: 1px solid var(--borda-2);
+        }
+        .nota { flex: 1; color: var(--texto-3); font-size: 13px; }
+        .botao {
+            padding: 8px 14px;
+            border: 1px solid var(--borda-3);
+            border-radius: 8px;
+            background: none;
+            color: var(--texto);
+            font: inherit;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .botao:hover { background: var(--fundo-3); }
+        .botao.principal { border-color: var(--texto); background: var(--texto); color: var(--fundo-0); }
+        .botao.principal:hover { background: #fff; }
+        .botao:disabled { opacity: 0.4; cursor: default; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>O que você quer compartilhar?</h1>
+        <div class="abas" role="tablist">
+            <button class="aba" role="tab" data-tipo="tela" aria-selected="true">Telas</button>
+            <button class="aba" role="tab" data-tipo="janela" aria-selected="false">Janelas</button>
+        </div>
+    </header>
+    <main>
+        <div class="grade" role="radiogroup" aria-label="Fontes"></div>
+    </main>
+    <footer>
+        <span class="nota"></span>
+        <button class="botao" id="cancelar">Cancelar</button>
+        <button class="botao principal" id="compartilhar" disabled>Compartilhar</button>
+    </footer>
+
+    <script>
+        const grade = document.querySelector(".grade");
+        const botaoCompartilhar = document.getElementById("compartilhar");
+        let fontes = [];
+        let tipo = "tela";
+        let escolhida = null;
+
+        function desenhar() {
+            grade.replaceChildren();
+            const lista = fontes.filter((f) => f.tipo === tipo);
+            if (lista.length === 0) {
+                const vazio = document.createElement("p");
+                vazio.className = "vazio";
+                vazio.textContent = tipo === "tela" ? "Nenhuma tela encontrada." : "Nenhuma janela aberta.";
+                grade.append(vazio);
+            }
+            for (const f of lista) {
+                const botao = document.createElement("button");
+                botao.className = "fonte";
+                botao.setAttribute("role", "radio");
+                botao.setAttribute("aria-checked", String(f.id === escolhida));
+                const miniatura = document.createElement("img");
+                miniatura.className = "miniatura";
+                miniatura.src = f.miniatura;
+                miniatura.alt = "";
+                const nome = document.createElement("div");
+                nome.className = "nome";
+                if (f.icone) {
+                    const icone = document.createElement("img");
+                    icone.src = f.icone;
+                    icone.alt = "";
+                    nome.append(icone);
+                }
+                const texto = document.createElement("span");
+                // título de janela de outro programa: sempre como texto, nunca como HTML
+                texto.textContent = f.nome;
+                nome.append(texto);
+                botao.append(miniatura, nome);
+                botao.addEventListener("click", () => marcar(f.id));
+                botao.addEventListener("dblclick", () => window.seletor.escolher(f.id));
+                grade.append(botao);
+            }
+        }
+
+        function marcar(id) {
+            escolhida = id;
+            botaoCompartilhar.disabled = !id;
+            desenhar();
+            grade.querySelector('[aria-checked="true"]')?.focus();
+        }
+
+        function trocarAba(novo) {
+            tipo = novo;
+            for (const a of document.querySelectorAll(".aba")) a.setAttribute("aria-selected", String(a.dataset.tipo === novo));
+            desenhar();
+        }
+
+        for (const a of document.querySelectorAll(".aba")) a.addEventListener("click", () => trocarAba(a.dataset.tipo));
+        document.getElementById("cancelar").addEventListener("click", () => window.seletor.escolher(null));
+        botaoCompartilhar.addEventListener("click", () => window.seletor.escolher(escolhida));
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") window.seletor.escolher(null);
+            if (e.key === "Enter" && escolhida && !e.target.closest?.(".aba, #cancelar")) window.seletor.escolher(escolhida);
+        });
+
+        window.seletor.fontes().then((r) => {
+            fontes = r.fontes;
+            document.querySelector(".nota").textContent = r.comAudio ? "O som do computador vai junto." : "";
+            // uma tela só: já vem marcada, é só confirmar
+            const telas = fontes.filter((f) => f.tipo === "tela");
+            if (telas.length === 1) escolhida = telas[0].id;
+            botaoCompartilhar.disabled = !escolhida;
+            desenhar();
+        });
+    </script>
+</body>
+</html>

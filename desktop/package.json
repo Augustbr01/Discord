@@ -1,0 +1,84 @@
+{
+  "name": "liberdade-desktop",
+  "productName": "Liberdade",
+  "version": "0.1.0",
+  "description": "Liberdade: servidores, salas de voz e vídeo com a sua galera.",
+  "homepage": "https://liberdade.augustdev.com.br",
+  "author": "Augusto <claudiocodigos26@gmail.com>",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/main.js",
+  "scripts": {
+    "icones": "node scripts/icones.mjs",
+    "build": "node scripts/build.mjs",
+    "checar": "tsc --noEmit",
+    "start": "npm run build && node scripts/abrir.mjs",
+    "dev": "npm run build && node scripts/abrir.mjs --site=http://localhost:5174",
+    "pacote": "npm run build && electron-builder",
+    "pacote:linux": "npm run build && electron-builder --linux",
+    "pacote:win": "npm run build && electron-builder --win",
+    "pacote:mac": "npm run build && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "desktopName": "br.com.augustdev.liberdade.desktop",
+  "build": {
+    "appId": "br.com.augustdev.liberdade",
+    "productName": "Liberdade",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "assets/**",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "Liberdade",
+        "schemes": [
+          "liberdade"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "executableName": "liberdade",
+      "category": "Network",
+      "synopsis": "Servidores, salas de voz e vídeo com a sua galera",
+      "syncDesktopName": true
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "Liberdade"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.social-networking",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "O Liberdade usa o microfone nas chamadas de voz.",
+        "NSCameraUsageDescription": "O Liberdade usa a câmera nas chamadas de vídeo."
+      }
+    }
+  }
+}

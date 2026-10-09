@@ -17,6 +17,7 @@ import { YoutubeSalaProvider } from "./contexto/YoutubeSala";
 import { ControleSalaProvider } from "./contexto/ControleSala";
 import { atualizarResumo, definirPermissao, removerMembro, useServidor } from "./hooks/useServidor";
 import { useSonsDeVoz } from "./hooks/useSonsDeVoz";
+import { desktop } from "./lib/desktop";
 import { gateway } from "./lib/gateway";
 import { pessoasNaSala } from "./lib/salas";
 import { extrairIdConvite, lerArmazenado, removerArmazenado, salvarArmazenado } from "./lib/util";
@@ -199,6 +200,11 @@ function Aplicacao() {
             setNaoLidos((n) => ({ ...n, [evento.servidorId]: (n[evento.servidorId] ?? 0) + 1 }));
         });
     }, [euId]);
+
+    // app desktop: o total vai pro ícone do app (barra de tarefas/dock) e pra bandeja
+    useEffect(() => {
+        desktop?.definirNaoLidos(Object.values(naoLidos).reduce((soma, n) => soma + n, 0));
+    }, [naoLidos]);
 
     // servidor mudou de nome ou de ícone (por você ou outro admin): atualiza a barra de servidores.
     // O servidor aberto se atualiza sozinho no useServidor
