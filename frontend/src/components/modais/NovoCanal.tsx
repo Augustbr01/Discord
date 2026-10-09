@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Hash, Loader2, Volume2 } from "lucide-react";
-import { api, mensagemDeErro, type Canal, type TipoCanal } from "../../api";
+import { Clapperboard, Hash, Loader2, Sofa, Volume2 } from "lucide-react";
+import { api, mensagemDeErro, type Canal, type ModeloSala, type TipoCanal } from "../../api";
 import { Dialogo } from "../ui/Dialogo";
 
 type Props = {
@@ -18,6 +18,7 @@ function nomeFinal(nome: string, tipo: TipoCanal) {
 
 export function NovoCanal({ servidorId, tipoInicial, onFechar, onCriado }: Props) {
     const [tipo, setTipo] = useState<TipoCanal>(tipoInicial);
+    const [modelo, setModelo] = useState<ModeloSala>("PADRAO");
     const [nome, setNome] = useState("");
     const [enviando, setEnviando] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export function NovoCanal({ servidorId, tipoInicial, onFechar, onCriado }: Props
         setEnviando(true);
         setErro(null);
         try {
-            onCriado(await api.criarCanal(servidorId, final, tipo));
+            onCriado(await api.criarCanal(servidorId, final, tipo, tipo === "VOZ" ? modelo : undefined));
         } catch (err) {
             setErro(mensagemDeErro(err));
         } finally {
@@ -59,6 +60,28 @@ export function NovoCanal({ servidorId, tipoInicial, onFechar, onCriado }: Props
                         />
                     </div>
                 </div>
+
+                {tipo === "VOZ" && (
+                    <div className="campo-rotulado">
+                        <span className="rotulo">Sala no mundo 3D</span>
+                        <div className="tipos-canal" role="radiogroup">
+                            <OpcaoTipo
+                                ativo={modelo === "PADRAO"}
+                                onClick={() => setModelo("PADRAO")}
+                                icone={<Sofa size={20} />}
+                                titulo="Sala comum"
+                                descricao="Sofás, mesa e uma TV"
+                            />
+                            <OpcaoTipo
+                                ativo={modelo === "CINEMA"}
+                                onClick={() => setModelo("CINEMA")}
+                                icone={<Clapperboard size={20} />}
+                                titulo="Cinema"
+                                descricao="Telão, poltronas e luz que apaga no filme"
+                            />
+                        </div>
+                    </div>
+                )}
 
                 <label className="campo-rotulado">
                     <span className="rotulo">Nome</span>

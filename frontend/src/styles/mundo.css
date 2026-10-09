@@ -1,0 +1,932 @@
+/* =========================================================
+   Mundo 3D: canvas em tela cheia e o HUD por cima dele
+   ========================================================= */
+
+.mundo {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: #0c0b0a;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* z-index cria um empilhamento próprio: o YouTube na TV joga o canvas pra um z-index
+   enorme (o iframe fica atrás dele), e sem isso o canvas cobriria o HUD */
+.mundo-canvas {
+    position: absolute !important;
+    inset: 0;
+    z-index: 0;
+    touch-action: none;
+}
+
+.mundo-carregando {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    color: var(--texto-3);
+}
+
+.mundo-sair {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    /* acima até dos avisos de "o 3D não abriu", pra sempre dar pra sair */
+    z-index: 7;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-weight: 600;
+    color: var(--texto);
+    background: rgba(15, 15, 17, 0.78);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+    transition: background 0.12s;
+}
+
+.mundo-sair:hover {
+    background: rgba(34, 34, 38, 0.9);
+}
+
+/* o HUD não pega clique (o clique vai pro canvas e trava o mouse); só os botões pegam */
+.mundo-hud {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.mundo-hud .controles,
+.mundo-hud button {
+    pointer-events: auto;
+}
+
+.mundo-local {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(360px, calc(100vw - 180px));
+    padding: 8px 14px 8px 8px;
+    border-radius: 12px;
+    background: rgba(15, 15, 17, 0.72);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+}
+
+.mundo-local > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mundo-local strong {
+    font-size: 14px;
+}
+
+.mundo-local span {
+    font-size: 12px;
+    color: var(--texto-3);
+}
+
+.mundo-mira {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+/* mouse solto: "clique pra jogar" um pouco acima do centro e o card das teclas embaixo */
+.mundo-pausa {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    translate: -50% -50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: min(880px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    animation: surgir 0.16s ease;
+}
+
+.mundo-pausa-jogar {
+    position: relative;
+    overflow: hidden;
+    min-width: min(380px, 100%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 22px 14px 16px;
+    border-radius: 14px;
+    background: rgba(15, 15, 17, 0.82);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--sombra);
+}
+
+.mundo-pausa-jogar > svg {
+    flex-shrink: 0;
+    padding: 9px;
+    box-sizing: content-box;
+    border-radius: 10px;
+    color: var(--fundo-0);
+    background: var(--texto);
+}
+
+.mundo-pausa-jogar div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mundo-pausa-jogar strong {
+    font-size: 16px;
+}
+
+.mundo-pausa-jogar span {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12.5px;
+    color: var(--texto-3);
+}
+
+.mundo-pausa-jogar kbd:first-of-type {
+    margin-left: 3px;
+}
+
+/* logo depois do Esc: o ícone apaga e a barra embaixo esvazia até o navegador liberar o mouse */
+.mundo-pausa-jogar.esperando > svg {
+    color: var(--texto-2);
+    background: var(--fundo-4);
+}
+
+.mundo-pausa-barra {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--texto);
+    transform-origin: left;
+    animation-name: esvaziar;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+
+@keyframes esvaziar {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+
+.mundo-pausa-teclas {
+    width: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 18px 16px;
+    border-radius: 14px;
+    background: rgba(15, 15, 17, 0.82);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--sombra);
+}
+
+.mundo-pausa-teclas > header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--texto-2);
+}
+
+/* a lista de teclas (card da pausa e configurações): cada grupo num bloco */
+.lista-teclas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+}
+
+.lista-teclas section {
+    padding: 12px 14px 14px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.lista-teclas h4 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--texto-3);
+}
+
+/* teclas | ação: a coluna das teclas tem a largura da maior do grupo, e as linhas alinham por ela */
+.lista-teclas dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 14px;
+    margin: 0;
+}
+
+.lista-teclas dl > div {
+    display: contents;
+}
+
+.lista-teclas dt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.lista-teclas dd {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--texto);
+}
+
+.lista-teclas dd small {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--texto-3);
+}
+
+.lista-teclas-junto {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--texto-3);
+}
+
+/* tecla de teclado: com "altura" (a borda de baixo mais grossa) */
+.tecla {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--texto);
+    background: linear-gradient(180deg, #303037, #24242a);
+    border: 1px solid #3c3c44;
+    border-bottom: 3px solid #17171b;
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.tecla-larga {
+    padding: 0 9px;
+}
+
+.tecla-mouse {
+    padding: 0 8px 0 6px;
+    color: var(--texto-2);
+}
+
+/* W em cima, A S D embaixo, como no teclado */
+.teclas-cruz {
+    display: grid;
+    grid-template-columns: repeat(3, 26px);
+    gap: 3px;
+}
+
+.teclas-cruz .tecla {
+    min-width: 0;
+    padding: 0;
+}
+
+/* as quatro com lugar fixo (W A S D, nessa ordem) */
+.teclas-cruz .tecla:nth-child(1) {
+    grid-area: 1 / 2;
+}
+
+.teclas-cruz .tecla:nth-child(2) {
+    grid-area: 2 / 1;
+}
+
+.teclas-cruz .tecla:nth-child(3) {
+    grid-area: 2 / 2;
+}
+
+.teclas-cruz .tecla:nth-child(4) {
+    grid-area: 2 / 3;
+}
+
+/* avisos sem tecla (conectando, lugar ocupado): no meio, em cima da barra da call */
+.mundo-avisos {
+    position: absolute;
+    left: 50%;
+    bottom: 96px;
+    translate: -50% 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+/* as teclas que dá pra usar agora (E, F, Espaço...): no canto de baixo à direita, lado a lado */
+.mundo-dicas {
+    position: absolute;
+    right: 16px;
+    bottom: 24px;
+    max-width: calc(100% - 32px);
+    display: flex;
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* tela estreita: a barra da call (no meio, embaixo) chega no canto, então sobe */
+@media (max-width: 900px) {
+    .mundo-dicas {
+        bottom: 88px;
+    }
+}
+
+/* no toque, fica à esquerda da coluna de botões (pular, agachar...) */
+.mundo-dicas.toque {
+    right: 86px;
+}
+
+.mundo-dica {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: rgba(15, 15, 17, 0.8);
+    border: 1px solid var(--borda-2);
+    backdrop-filter: blur(10px);
+    animation: surgir 0.14s ease;
+}
+
+.mundo-dica:has(> svg) {
+    padding-left: 14px;
+}
+
+.mundo-dica kbd,
+.mundo-dica-botao {
+    display: inline-grid;
+    place-items: center;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 6px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--fundo-0);
+    background: var(--texto);
+    border: none;
+}
+
+.mundo-dica-botao {
+    min-width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+
+/* ---------- celular: joystick e arrastar pra olhar ---------- */
+
+.mundo-botoes-toque {
+    position: absolute;
+    right: 16px;
+    bottom: 120px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.mundo-botoes-toque button {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    color: var(--texto);
+    background: rgba(15, 15, 17, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    touch-action: manipulation;
+}
+
+.mundo-botoes-toque button.ativo {
+    color: var(--fundo-0);
+    background: rgba(237, 237, 239, 0.9);
+}
+
+.mundo-toque {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    touch-action: none;
+}
+
+.mundo-joystick {
+    position: absolute;
+    width: 112px;
+    height: 112px;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: grid;
+    place-items: center;
+}
+
+.mundo-joystick > span {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.mundo-toque-ajuda {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    translate: -50% 0;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--texto-2);
+    background: rgba(15, 15, 17, 0.7);
+    pointer-events: none;
+}
+
+/* ---------- chat de canal de texto (aberto num quadro do hall) ---------- */
+
+.mundo-chat {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    /* acima do "Sair do 3D" (o painel tem o próprio botão de fechar) */
+    z-index: 8;
+    display: flex;
+    width: min(420px, 100vw);
+    background: var(--fundo-2);
+    border-left: 1px solid var(--borda-2);
+    box-shadow: var(--sombra-forte);
+}
+
+/* dentro do 3D os botões do topo (buscar, membros) não fazem sentido */
+.mundo-chat .cabecalho-acoes,
+.mundo-chat .cabecalho .so-celular {
+    display: none;
+}
+
+/* chat da call: o painel ocupa a largura toda da lateral */
+.mundo-chat-call .chat-sala {
+    flex: 1;
+    width: auto;
+    border-left: none;
+}
+
+.mundo-chat-fechar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+
+/* o tablet na mão: sobe da parte de baixo da tela, por cima da barra da call */
+.mundo-tablet {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    translate: -50% 0;
+    z-index: 8;
+    width: min(980px, calc(100vw - 24px));
+    height: min(560px, calc(100dvh - 96px));
+    padding: 14px 14px 14px 22px;
+    border-radius: 30px;
+    background: linear-gradient(160deg, #26262b, #111113 60%);
+    border: 1px solid #3a3a40;
+    box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.85), inset 0 0 0 2px rgba(255, 255, 255, 0.03);
+    animation: tablet-subir 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* a câmera frontal do tablet (deitado: fica no lado esquerdo) */
+.mundo-tablet::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    width: 6px;
+    height: 6px;
+    translate: 0 -50%;
+    border-radius: 50%;
+    background: #0a0a0c;
+    box-shadow: 0 0 0 1px #2c2c31;
+}
+
+.mundo-tablet-tela {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 18px;
+    background: var(--fundo-1);
+}
+
+.mundo-tablet .chat-sala {
+    position: static;
+    width: 100%;
+    max-width: none;
+    border: none;
+    box-shadow: none;
+}
+
+@keyframes tablet-subir {
+    from {
+        transform: translateY(40%) rotateX(18deg);
+        opacity: 0;
+    }
+}
+
+/* ---------- elevador e tela cheia ---------- */
+
+.mundo-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.55);
+    animation: surgir 0.14s ease;
+}
+
+.mundo-elevador {
+    width: min(380px, 100%);
+    max-height: calc(100dvh - 32px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 14px;
+    background: var(--fundo-3);
+    border: 1px solid var(--borda-2);
+    box-shadow: var(--sombra-forte);
+    overflow: hidden;
+}
+
+.mundo-elevador-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 12px 12px 18px;
+    border-bottom: 1px solid var(--borda);
+}
+
+.mundo-elevador ul {
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+    overflow-y: auto;
+}
+
+.mundo-andar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 9px;
+    text-align: left;
+    transition: background 0.12s;
+}
+
+.mundo-andar:hover {
+    background: var(--hover);
+}
+
+.mundo-andar.atual {
+    background: var(--ativo);
+}
+
+.mundo-andar small {
+    margin-left: auto;
+    color: var(--texto-3);
+    white-space: nowrap;
+}
+
+.mundo-andar-numero {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #f3c98a;
+    border: 1px solid rgba(243, 201, 138, 0.4);
+}
+
+.mundo-tela-cheia {
+    grid-template-rows: auto minmax(0, 1fr);
+    place-items: stretch;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.88);
+}
+
+.mundo-tela-cheia-topo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-self: center;
+    align-items: center;
+}
+
+.mundo-tela-cheia-video {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+}
+
+.mundo-tela-cheia-video video {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    background: #000;
+}
+
+/* ---------- sem WebGL / placa de vídeo reiniciou ---------- */
+
+.mundo-sem-3d {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(9, 9, 11, 0.86);
+}
+
+.mundo-sem-3d-cartao {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: min(440px, 100%);
+    padding: 26px 24px 22px;
+    border-radius: 14px;
+    text-align: center;
+    background: var(--fundo-3);
+    border: 1px solid var(--borda-2);
+    box-shadow: var(--sombra-forte);
+}
+
+.mundo-sem-3d-cartao strong {
+    font-size: 17px;
+}
+
+.mundo-sem-3d-cartao p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--texto-2);
+}
+
+.mundo-sem-3d-icone {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    color: var(--texto-2);
+    background: var(--fundo-4);
+}
+
+.mundo-sem-3d-acoes {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.mundo-aviso-software {
+    position: absolute;
+    top: 64px;
+    left: 50%;
+    translate: -50% 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: min(620px, calc(100% - 32px));
+    padding: 8px 8px 8px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #f3d9ad;
+    background: rgba(40, 30, 14, 0.9);
+    border: 1px solid rgba(243, 201, 138, 0.3);
+}
+
+.mundo-aviso-software span {
+    flex: 1;
+}
+
+/* ---------- botão de entrar no 3D (lista de canais) ---------- */
+
+.canal-mundo {
+    margin-bottom: 4px;
+    border: 1px solid var(--borda-2);
+    background: var(--fundo-3);
+    color: var(--texto-2);
+    font-weight: 600;
+}
+
+.canal-mundo:hover {
+    background: var(--fundo-4);
+}
+
+@media (max-width: 640px) {
+    .mundo-local {
+        top: 12px;
+        left: 12px;
+    }
+
+    .mundo-sair {
+        top: 12px;
+        right: 12px;
+    }
+
+    .mundo-dica {
+        bottom: 132px;
+    }
+}
+
+/* ---------- configurações do 3D ---------- */
+
+.mundo-config-botao {
+    position: absolute;
+    top: 62px;
+    right: 16px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    color: var(--texto);
+    background: rgba(15, 15, 17, 0.78);
+    border: 1px solid var(--borda-2);
+    pointer-events: auto;
+}
+
+.mundo-config-botao:hover {
+    background: rgba(34, 34, 38, 0.9);
+}
+
+.mundo-config {
+    width: min(460px, 100%);
+    max-height: calc(100dvh - 32px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 14px;
+    background: var(--fundo-3);
+    border: 1px solid var(--borda-2);
+    box-shadow: var(--sombra-forte);
+    overflow: hidden;
+}
+
+.mundo-config-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 12px 12px 18px;
+    border-bottom: 1px solid var(--borda);
+}
+
+.mundo-config-corpo {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 16px 18px;
+    overflow-y: auto;
+}
+
+.mundo-config-corpo section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mundo-config-corpo h3 {
+    margin: 0;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--texto-3);
+}
+
+.mundo-config-linha {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.mundo-config-linha > span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mundo-config-linha small {
+    color: var(--texto-3);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.mundo-config-linha input[type="number"] {
+    width: 84px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--fundo-1);
+    border: 1px solid var(--borda-2);
+    color: var(--texto);
+    font: inherit;
+    text-align: right;
+}
+
+.mundo-config-valor {
+    font-variant-numeric: tabular-nums;
+}
+
+.mundo-config-barra {
+    width: 100%;
+    accent-color: var(--texto);
+}
+
+.mundo-config-chave {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--texto);
+}
+
+
+.mundo-config-rodape {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 14px;
+    border-top: 1px solid var(--borda);
+}
+
+/* velocidade em unidades do CS, embaixo da mira */
+.mundo-velocidade {
+    position: absolute;
+    left: 50%;
+    top: calc(50% + 90px);
+    translate: -50% 0;
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+@media (max-width: 640px) {
+    .mundo-config-botao {
+        top: 56px;
+        right: 12px;
+    }
+}

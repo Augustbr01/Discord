@@ -12,6 +12,8 @@ import fastifyWebsocket from "@fastify/websocket"
 import { RotasServidor } from "./routes/Servidor"
 import { routeWebSocket } from "./routes/WebSocketMain"
 import { routeHook } from "./routes/WebHook"
+import { iniciarSincronizacaoCalls } from "./sincronizarCalls"
+import { canaisComGente } from "./eventosCall"
 import { imagemRotas } from "./routes/Imagem"
 import {fastifyRateLimit} from "@fastify/rate-limit"
 import multipart from "@fastify/multipart"
@@ -91,6 +93,8 @@ app.register(LiveKit,{prefix:"/api"});
 
 app.listen({port:3000}, (error) => {
     console.log("ligou");
+    // quem está em cada call: confere com o LiveKit de tempos em tempos (não depende só do webhook)
+    iniciarSincronizacaoCalls(canaisComGente);
     if(error) {
         console.log(error);
     }

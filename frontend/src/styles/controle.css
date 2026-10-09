@@ -1,0 +1,506 @@
+/* =========================================================
+   Controle da sala (o "tablet"): TV, som, luzes e YouTube
+   ========================================================= */
+
+.controle-abas {
+    display: flex;
+    gap: 4px;
+    margin: 10px 12px 0;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--fundo-3);
+}
+
+.controle-abas button {
+    flex: 1;
+    height: 30px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--texto-3);
+    transition: background 0.12s, color 0.12s;
+}
+
+.controle-abas button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+.controle-corpo {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 16px;
+}
+
+.controle-corpo section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.controle-opcoes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.controle-opcao {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    text-align: left;
+    border: 1px solid var(--borda-2);
+    background: var(--fundo-2);
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.controle-opcao:hover:not(:disabled) {
+    background: var(--hover);
+}
+
+.controle-opcao.ativo {
+    border-color: var(--texto-2);
+    background: var(--ativo);
+}
+
+.controle-opcao:disabled {
+    opacity: 0.45;
+}
+
+.controle-opcao-icone {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    color: var(--texto-2);
+    background: var(--fundo-4);
+}
+
+.controle-opcao.ativo .controle-opcao-icone {
+    color: var(--fundo-0);
+    background: var(--texto);
+}
+
+.controle-opcao-texto {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.controle-opcao-texto strong {
+    font-size: 13.5px;
+}
+
+.controle-opcao-texto small {
+    font-size: 12px;
+    color: var(--texto-3);
+}
+
+.controle-volume-barra {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--texto-2);
+}
+
+.controle-volume-barra input {
+    flex: 1;
+    accent-color: var(--texto);
+}
+
+.controle-volume-barra span {
+    width: 38px;
+    font-size: 12px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* no tablet: o número grande em cima da barra, num cartão */
+.controle-volume.grande {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: 14px;
+    background: var(--fundo-2);
+    border: 1px solid var(--borda-2);
+}
+
+.controle-volume-numero {
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.controle-volume-numero small {
+    margin-left: 2px;
+    font-size: 20px;
+    color: var(--texto-3);
+}
+
+.controle-volume.grande input {
+    height: 6px;
+}
+
+.controle-alternar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.controle-alternar input {
+    margin-top: 3px;
+    accent-color: var(--texto);
+}
+
+.controle-alternar span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.controle-alternar strong {
+    font-size: 13.5px;
+}
+
+.controle-alternar small {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--texto-3);
+}
+
+.controle-segmentos {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--fundo-3);
+}
+
+.controle-segmentos button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--texto-3);
+}
+
+.controle-segmentos button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+/* paletas dos LEDs: cinco bolinhas de duas cores */
+.controle-paletas {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.controle-paletas button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 2px 6px;
+    border-radius: 9px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--texto-3);
+    background: var(--fundo-3);
+}
+
+.controle-paletas button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+.controle-paleta-cores {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+}
+
+.controle-paletas button.ativo .controle-paleta-cores {
+    box-shadow: 0 0 0 2px var(--fundo-4), 0 0 0 4px var(--texto);
+}
+
+/* prévia ao vivo da tela compartilhada, na opção de mandar pra TV */
+.controle-previa {
+    width: 76px;
+    height: 43px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 7px;
+    background: #000;
+    box-shadow: 0 0 0 1px var(--borda-3);
+}
+
+.controle-previa video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.controle-opcao.ativo .controle-previa {
+    box-shadow: 0 0 0 2px var(--texto);
+}
+
+.controle-aviso {
+    margin: auto;
+    padding: 24px;
+    max-width: 320px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--texto-2);
+}
+
+.controle-segmentos.grande button {
+    flex-direction: column;
+    height: 76px;
+    gap: 8px;
+    font-size: 13px;
+}
+
+/* ---------- formato tablet (3D): deitado, com as abas na lateral ---------- */
+
+.tablet-controle {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+
+.tablet-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 196px;
+    flex-shrink: 0;
+    padding: 16px 10px;
+    background: var(--fundo-2);
+    border-right: 1px solid var(--borda);
+}
+
+.tablet-nav-titulo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 8px 14px;
+}
+
+.tablet-nav-titulo strong {
+    font-size: 14.5px;
+}
+
+.tablet-nav-titulo span {
+    font-size: 12px;
+    color: var(--texto-3);
+}
+
+.tablet-nav button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 44px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--texto-3);
+    transition: background 0.12s, color 0.12s;
+}
+
+.tablet-nav button:hover {
+    color: var(--texto-2);
+    background: var(--hover);
+}
+
+.tablet-nav button.ativo {
+    color: var(--texto);
+    background: var(--fundo-4);
+}
+
+.tablet-nav-rodape {
+    margin-top: auto;
+    padding: 0 8px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--texto-3);
+}
+
+.tablet-conteudo {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tablet-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 16px 4px 22px;
+}
+
+.tablet-topo div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.tablet-topo strong {
+    font-size: 18px;
+}
+
+.tablet-topo span {
+    font-size: 12.5px;
+    color: var(--texto-3);
+}
+
+.tablet-voltando {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--texto-2);
+    background: var(--fundo-3);
+}
+
+.tablet-corpo {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 22px 22px;
+}
+
+.tablet-corpo section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Luzes: iluminação de um lado, LEDs do outro */
+.tablet-colunas {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    gap: 28px;
+    align-items: start;
+}
+
+/* TV: as opções em cartões, lado a lado */
+.controle-grade {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 10px;
+}
+
+.controle-opcao.cartao {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px;
+}
+
+.controle-opcao.cartao .controle-opcao-icone,
+.controle-opcao.cartao .controle-previa {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+}
+
+.controle-opcao.cartao .controle-opcao-texto {
+    padding: 0 2px 2px;
+}
+
+/* YouTube no tablet: colar o link e o que está tocando à esquerda, a fila à direita */
+.tablet-conteudo .youtube-corpo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: repeat(3, auto) 1fr;
+    align-content: start;
+    gap: 18px 28px;
+    overflow: hidden;
+    padding: 14px 22px 22px;
+}
+
+.tablet-conteudo .youtube-corpo > * {
+    grid-column: 1;
+}
+
+.tablet-conteudo .youtube-fila {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* sem fila: uma coluna só, com rolagem se precisar */
+.tablet-conteudo .youtube-corpo:not(:has(.youtube-fila)) {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+}
+
+/* tela estreita: as abas vão pra cima, só com ícone e nome */
+@media (max-width: 720px) {
+    .tablet-controle {
+        flex-direction: column;
+    }
+
+    .tablet-nav {
+        flex-direction: row;
+        width: auto;
+        padding: 8px;
+        border-right: none;
+        border-bottom: 1px solid var(--borda);
+    }
+
+    .tablet-nav-titulo,
+    .tablet-nav-rodape {
+        display: none;
+    }
+
+    .tablet-nav button {
+        flex: 1;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 6px;
+        font-size: 12.5px;
+    }
+
+    .tablet-colunas,
+    .tablet-conteudo .youtube-corpo {
+        grid-template-columns: minmax(0, 1fr);
+        overflow-y: auto;
+    }
+
+    .tablet-conteudo .youtube-fila {
+        grid-column: 1;
+        grid-row: auto;
+        overflow: visible;
+    }
+}

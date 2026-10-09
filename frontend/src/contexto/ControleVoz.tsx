@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
     RoomAudioRenderer, useConnectionState, useLocalParticipant, useRemoteParticipants, useTrackToggle,
 } from "@livekit/components-react";
-import { ConnectionState, ScreenSharePresets, Track, type VideoPreset } from "livekit-client";
+import { AudioPresets, ConnectionState, ScreenSharePresets, Track, type VideoPreset } from "livekit-client";
 import { lerArmazenado, salvarArmazenado } from "../lib/util";
 import { useToast } from "./Toasts";
 
@@ -44,6 +44,12 @@ export const QUALIDADES_TELA: Record<QualidadeTela, Perfil> = {
 };
 
 type PreferenciasTela = { qualidade: QualidadeTela; audio: boolean };
+
+// áudio da tela é música/filme, não voz: em estéreo (o surround do 3D separa esquerda e direita),
+// sem o tratamento de voz do navegador (anti-eco, anti-ruído e ganho automático estragam música)
+// e sem dtx/red (que picotam o som), com bitrate de música
+const AUDIO_DA_TELA = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+const PUBLICAR_AUDIO_DA_TELA = { audioPreset: AudioPresets.musicHighQualityStereo, dtx: false, red: false, forceStereo: true };
 
 const CHAVE_TELA = "liberdade:tela";
 const CHAVE_VOLUMES = "liberdade:volumes";
@@ -93,6 +99,10 @@ type Props = {
     setMicPreferido: (ligado: boolean) => void;
     surdo: boolean;
     setSurdo: (surdo: boolean) => void;
+    // mundo 3D aberto: o som sai pelo áudio espacial dele, não daqui
+    audioEspacial?: boolean;
+    // sala de cinema: a tela vai sempre a 1080p 30 fps (filme a 15 fps fica travado)
+    cinema?: boolean;
     children: ReactNode;
 };
 
@@ -101,7 +111,7 @@ type Props = {
 // Câmera, tela e volumes ficam aqui também, pra barra da chamada e o painel lateral
 // mostrarem o mesmo estado. Os avisos de falha de câmera/microfone saem do
 // onMediaDeviceFailure do LiveKitRoom (no App), por isso os toggles aqui só engolem o erro
-export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setSurdo, children }: Props) {
+export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setSurdo, audioEspacial = false, cinema = false, children }: Props) {
     const toast = useToast();
     const estado = useConnectionState();
     const conectado = estado === ConnectionState.Connected;
@@ -164,13 +174,13 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
     }, []);
 
     const iniciarTela = useCallback(async () => {
-        const perfil = QUALIDADES_TELA[prefsTela.qualidade] ?? QUALIDADES_TELA.texto;
+        const perfil = cinema ? QUALIDADES_TELA.maxima : (QUALIDADES_TELA[prefsTela.qualidade] ?? QUALIDADES_TELA.texto);
         setTelaPendente(true);
         try {
             await localParticipant.setScreenShareEnabled(
                 true,
                 {
-                    audio: prefsTela.audio,
+                    audio: prefsTela.audio ? AUDIO_DA_TELA : false,
                     systemAudio: prefsTela.audio ? "include" : "exclude",
                     resolution: perfil.preset.resolution,
                     contentHint: perfil.dica,
@@ -179,7 +189,7 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
                     // o Chrome mostra "compartilhar esta aba" pra trocar de aba sem parar
                     surfaceSwitching: "include",
                 },
-                { screenShareEncoding: perfil.preset.encoding, degradationPreference: perfil.degradacao },
+                { ...PUBLICAR_AUDIO_DA_TELA, screenShareEncoding: perfil.preset.encoding, degradationPreference: perfil.degradacao },
             );
         } catch (err) {
             const nome = err instanceof Error ? err.name : "";
@@ -196,7 +206,7 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
         } finally {
             setTelaPendente(false);
         }
-    }, [localParticipant, prefsTela, toast]);
+    }, [localParticipant, prefsTela, cinema, toast]);
 
     const pararTela = useCallback(async () => {
         setTelaPendente(true);
@@ -226,14 +236,15 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
     const remotos = useRemoteParticipants();
 
     // aplica em quem está na sala; o LiveKit guarda por fonte e reaplica quando o áudio
-    // (re)conecta, então quem chega depois ou volta a compartilhar já vem no volume certo
+    // (re)conecta, então quem chega depois ou volta a compartilhar já vem no volume certo.
+    // No 3D o <audio> fica inaudível (o som sai pelo áudio espacial): aqui não pode religar ele
     useEffect(() => {
         for (const p of remotos) {
             const v = volumes[p.identity];
-            p.setVolume(volumeReal(v?.voz ?? 1), Track.Source.Microphone);
-            p.setVolume(volumeReal(v?.tela ?? 1), Track.Source.ScreenShareAudio);
+            p.setVolume(volumeReal(audioEspacial ? 0 : v?.voz ?? 1), Track.Source.Microphone);
+            p.setVolume(volumeReal(audioEspacial ? 0 : v?.tela ?? 1), Track.Source.ScreenShareAudio);
         }
-    }, [remotos, volumes]);
+    }, [remotos, volumes, audioEspacial]);
 
     const volumeDe = useCallback((usuarioId: string, tipo: TipoVolume) => volumes[usuarioId]?.[tipo] ?? 1, [volumes]);
 
@@ -260,7 +271,9 @@ export function ControleVozProvider({ micPreferido, setMicPreferido, surdo, setS
 
     return (
         <Ctx.Provider value={valor}>
-            <RoomAudioRenderer muted={surdo} />
+            {/* volume 0 (e não muted) no 3D: o <audio> continua recebendo, só não toca.
+                Fora dele fica sem volume aqui, senão passaria por cima do volume por pessoa */}
+            <RoomAudioRenderer muted={surdo} volume={audioEspacial ? 0 : undefined} />
             {children}
         </Ctx.Provider>
     );

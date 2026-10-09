@@ -6,6 +6,9 @@ import "./styles/layout.css";
 import "./styles/chat.css";
 import "./styles/chamada.css";
 import "./styles/telas.css";
+import "./styles/mundo.css";
+import "./styles/youtube.css";
+import "./styles/controle.css";
 import App from "./App";
 
 createRoot(document.getElementById("root")!).render(

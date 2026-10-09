@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, DoorOpen, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
+import { Building2, ChevronDown, Clapperboard, DoorOpen, Hash, Loader2, Plus, Settings, Trash2, UserPlus, Volume2 } from "lucide-react";
 import type { Canal, ServidorDetalhe, TipoCanal, Usuario } from "../api";
 import { useControleVoz } from "../contexto/ControleVoz";
 import { chaveTela, useFocoChamada } from "../contexto/FocoChamada";
@@ -34,6 +34,7 @@ type Props = {
     onSairChamada: () => void;
     onEditarFoto: () => void;
     onSairConta: () => void;
+    onMundo3D: () => void;
 };
 
 // segunda coluna: canais do servidor, quem está nas salas, chamada atual e você
@@ -79,6 +80,11 @@ export function PainelCanais(props: Props) {
             <nav className="lista-canais">
                 {servidor ? (
                     <>
+                        <button className="canal canal-mundo" onClick={props.onMundo3D}>
+                            <Building2 size={18} className="canal-icone" />
+                            <span className="truncar">Mundo 3D</span>
+                        </button>
+
                         <Grupo titulo="Canais de texto" onCriar={souAdmin ? () => props.onNovoCanal("TEXTO") : undefined}>
                             {texto.map((c) => (
                                 <div key={c.id} className="canal-linha">
@@ -106,7 +112,9 @@ export function PainelCanais(props: Props) {
                                                 className={`canal ${canalAtualId === c.id ? "ativo" : ""} ${conectado ? "conectado" : ""}`}
                                                 onClick={() => props.onCanal(c)}
                                             >
-                                                <Volume2 size={18} className="canal-icone" />
+                                                {c.modelo === "CINEMA"
+                                                    ? <Clapperboard size={18} className="canal-icone" />
+                                                    : <Volume2 size={18} className="canal-icone" />}
                                                 <span className="truncar">{c.nome}</span>
                                                 {/* há quanto tempo a chamada da sala está rolando (pra quem está fora também) */}
                                                 {c.inicioCall && (pessoas.length > 0 || conectado) && (

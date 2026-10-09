@@ -10,7 +10,8 @@ import { Dica } from "../ui/Dica";
 import { Dispositivos } from "./Dispositivos";
 
 // barra de controles da chamada
-export function Controles({ onSair }: { onSair: () => void }) {
+// semTela: sem o botão de compartilhar tela (a call do hall do 3D não tem tela)
+export function Controles({ onSair, semTela = false }: { onSair: () => void; semTela?: boolean }) {
     const { conectado, micLigado, micPendente, alternarMic, surdo, alternarSurdo, camera, tela } = useControleVoz();
 
     // atalho: M liga/desliga o microfone
@@ -49,7 +50,7 @@ export function Controles({ onSair }: { onSair: () => void }) {
 
             {/* celular não compartilha tela: o botão ficava desabilitado sem explicação
                 (a dica que explicava não aparece no toque) */}
-            {tela.suportada && <ControleTela />}
+            {!semTela && tela.suportada && <ControleTela />}
 
             <MenuNoControle dica="Dispositivos" icone={<Settings2 size={20} />}>
                 <Dispositivos />

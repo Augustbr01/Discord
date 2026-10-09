@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { StartAudio, useConnectionState, useParticipants, useTracks, type TrackReferenceOrPlaceholder } from "@livekit/components-react";
+import { StartAudio, isTrackReference, useConnectionState, useParticipants, useTracks, type TrackReferenceOrPlaceholder } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
-import { Loader2, MessageSquare, PanelRightClose, PanelRightOpen, Volume2 } from "lucide-react";
+import {
+    Loader2, Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen, Pin, PinOff, TabletSmartphone,
+    TvMinimalPlay, Volume2,
+} from "lucide-react";
 import type { Usuario } from "../../api";
 import { useChatSala } from "../../contexto/ChatSala";
-import { chaveBloco, useFocoChamada } from "../../contexto/FocoChamada";
+import { useControleSala } from "../../contexto/ControleSala";
+import { useControleVoz } from "../../contexto/ControleVoz";
+import { chaveBloco, chaveTela, useFocoChamada } from "../../contexto/FocoChamada";
+import { useYoutubeSala } from "../../contexto/YoutubeSala";
 import { useAgora } from "../../hooks/useAgora";
 import { larguraNaGrade, OrdemDeChegada, resolverFoco } from "../../lib/palco";
 import { cronometro, estaDigitando } from "../../lib/util";
 import type { MapaMembros, Voz } from "../../tipos";
 import { Cabecalho } from "../ui/Cabecalho";
 import { Dica } from "../ui/Dica";
-import { AcaoBloco, Bloco } from "./Bloco";
+import { PainelControle } from "../controle/PainelControle";
+import { ControlesYoutube } from "../youtube/PainelYoutube";
+import { PlayerYoutube } from "../youtube/PlayerYoutube";
+import { AcaoBloco, Bloco, type ModoBloco } from "./Bloco";
 import { ChatAoVivo } from "./ChatAoVivo";
 import { Controles } from "./Controles";
 
@@ -24,6 +33,9 @@ type Props = {
 };
 
 type DadosBloco = { chave: string; trackRef: TrackReferenceOrPlaceholder; tela: boolean; local: boolean };
+
+// o YouTube assistido junto também é um quadro que dá pra pôr em destaque
+const CHAVE_YOUTUBE = "youtube";
 
 // espaço entre os quadros (igual ao gap do CSS)
 const VAO = 10;
@@ -46,7 +58,12 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
     const participantes = useParticipants();
     const { naoLidas } = useChatSala();
     const { escolha, focar, verGrade, automatico } = useFocoChamada();
-    const [chatAberto, setChatAberto] = useState(false);
+    const { surdo } = useControleVoz();
+    const youtube = useYoutubeSala();
+    const controle = useControleSala();
+    // um painel lateral por vez: o chat da sala, ou o controle da sala (aberto na aba Controle ou YouTube)
+    const [painel, setPainel] = useState<"chat" | "controle" | "youtube" | null>(null);
+    const chatAberto = painel === "chat";
     const [faixaOculta, setFaixaOculta] = useState(false);
     const agora = useAgora();
     const conectado = estado === ConnectionState.Connected;
@@ -73,7 +90,17 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
             .sort((a, b) => peso(a) - peso(b));
     }, [tracks]);
 
-    const existentes = useMemo(() => new Set(blocos.map((b) => b.chave)), [blocos]);
+    // com o mundo 3D aberto o vídeo toca na TV da sala de lá (um player só)
+    const videoYoutube = youtube.estado?.video && !youtube.noMundo ? youtube.estado : null;
+    // volume da TV escolhido no controle da sala
+    const volumeYoutube = useRef(100);
+    volumeYoutube.current = controle.estado?.volume ?? 100;
+
+    const existentes = useMemo(() => {
+        const chaves = new Set(blocos.map((b) => b.chave));
+        if (videoYoutube) chaves.add(CHAVE_YOUTUBE);
+        return chaves;
+    }, [blocos, videoYoutube]);
 
     // telas dos outros, da que começou primeiro pra mais recente
     const telasRemotas = blocos.filter((b) => b.tela && !b.local).map((b) => b.chave);
@@ -83,9 +110,21 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
     const telasPorChegada = useMemo(() => ordem.current.atualizar(telasRemotas), [assinaturaTelas]);
     const telaMaisRecente = telasPorChegada[telasPorChegada.length - 1] ?? null;
 
-    const chaveFoco = resolverFoco(escolha, existentes, telaMaisRecente);
-    const focado = (chaveFoco && blocos.find((b) => b.chave === chaveFoco)) || null;
+    // o automático segue o que escolheram pra TV no controle da sala (o tablet):
+    // desligada ou mosaico = grade (todo mundo junto); uma tela específica; o YouTube; senão a tela mais recente
+    const tv = controle.estado?.tv;
+    const telaDaTV = tv?.modo === "TELA" && tv.identidade ? chaveTela(tv.identidade) : null;
+    const destaqueAutomatico = tv?.modo === "DESLIGADA" || tv?.modo === "MOSAICO"
+        ? null
+        : telaDaTV && existentes.has(telaDaTV) ? telaDaTV : videoYoutube ? CHAVE_YOUTUBE : telaMaisRecente;
+
+    const chaveFoco = resolverFoco(escolha, existentes, destaqueAutomatico);
+    const focaYoutube = chaveFoco === CHAVE_YOUTUBE && !!videoYoutube;
+    const focado = (!focaYoutube && chaveFoco && blocos.find((b) => b.chave === chaveFoco)) || null;
     const outros = focado ? blocos.filter((b) => b !== focado) : blocos;
+    // o YouTube na faixa ao lado de outro destaque
+    const youtubeNaFaixa = !!videoYoutube && !focaYoutube;
+    const qtdOutros = outros.length + (youtubeNaFaixa ? 1 : 0);
 
     // alguém começou a compartilhar: sai da grade que você escolheu e mostra a tela nova
     const telasAntes = useRef(new Set(telasRemotas));
@@ -94,6 +133,24 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
         telasAntes.current = new Set(telasRemotas);
         if (chegou && escolha?.chave === null) automatico();
     }, [assinaturaTelas]);
+
+    // começou um vídeo no YouTube junto: mesma coisa
+    const videoId = videoYoutube?.video?.videoId ?? null;
+    const videoAntes = useRef(videoId);
+    useEffect(() => {
+        const comecou = videoId !== null && videoId !== videoAntes.current;
+        videoAntes.current = videoId;
+        if (comecou && escolha?.chave === null) automatico();
+    }, [videoId]);
+
+    // mexeram na TV pelo controle da sala: todo mundo volta a seguir a TV
+    const escolhaTV = tv ? `${tv.modo}|${tv.identidade ?? ""}` : null;
+    const tvAntes = useRef(escolhaTV);
+    useEffect(() => {
+        const mudou = tvAntes.current !== null && escolhaTV !== null && escolhaTV !== tvAntes.current;
+        tvAntes.current = escolhaTV;
+        if (mudou) automatico();
+    }, [escolhaTV]);
 
     // o quadro fixado sumiu (a pessoa saiu ou parou de compartilhar): volta pro automático
     useEffect(() => {
@@ -143,7 +200,7 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
 
     // ---------- controles somem enquanto você assiste ----------
 
-    const temFoco = !!focado;
+    const temFoco = !!focado || focaYoutube;
     const [ocioso, setOcioso] = useState(false);
     const timerOcioso = useRef<number | undefined>(undefined);
 
@@ -174,10 +231,31 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
                 descricao={conectado ? cronometro(agora - (voz.inicioSala ? Date.parse(voz.inicioSala) : voz.desde)) : "Conectando…"}
                 onMenu={onMenu}
             >
+                <Dica texto={painel === "controle" ? "Fechar" : "Controle da sala"} lado="baixo">
+                    <button
+                        className={`botao-icone ${painel === "controle" ? "ativo" : ""}`}
+                        onClick={() => setPainel((v) => (v === "controle" ? null : "controle"))}
+                        aria-pressed={painel === "controle"}
+                        aria-label="Controle da sala"
+                    >
+                        <TabletSmartphone size={19} />
+                    </button>
+                </Dica>
+                <Dica texto={painel === "youtube" ? "Fechar" : "Assistir junto (YouTube)"} lado="baixo">
+                    <button
+                        className={`botao-icone ${painel === "youtube" ? "ativo" : ""}`}
+                        onClick={() => setPainel((v) => (v === "youtube" ? null : "youtube"))}
+                        aria-pressed={painel === "youtube"}
+                        aria-label="Assistir junto"
+                    >
+                        <TvMinimalPlay size={19} />
+                        {youtube.estado?.video && painel !== "youtube" && <span className="ponto-novo" />}
+                    </button>
+                </Dica>
                 <Dica texto={chatAberto ? "Fechar chat" : "Chat da sala"} lado="baixo">
                     <button
                         className={`botao-icone ${chatAberto ? "ativo" : ""}`}
-                        onClick={() => setChatAberto((v) => !v)}
+                        onClick={() => setPainel((v) => (v === "chat" ? null : "chat"))}
                         aria-pressed={chatAberto}
                         aria-label="Chat da sala"
                     >
@@ -203,37 +281,76 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
 
                     {sozinho && !temFoco && <div className="palco-aviso palco-sozinho">Só você por aqui. Quem entrar aparece na hora.</div>}
 
-                    {focado ? (
-                        <div className={`cena-foco ${faixaOculta || outros.length === 0 ? "sem-faixa" : ""}`}>
+                    {focado || focaYoutube ? (
+                        <div className={`cena-foco ${faixaOculta || qtdOutros === 0 ? "sem-faixa" : ""}`}>
                             <div
                                 className="foco-principal"
                                 ref={principalRef}
-                                onDoubleClick={telaCheiaSuportada ? alternarTelaCheia : undefined}
+                                // no YouTube o clique pausa/continua pra todos: dois cliques não viram tela cheia
+                                onDoubleClick={telaCheiaSuportada && !focaYoutube ? alternarTelaCheia : undefined}
                             >
-                                <Bloco
-                                    key={focado.chave}
-                                    trackRef={focado.trackRef}
-                                    membros={membros}
-                                    eu={eu}
-                                    modo="destaque"
-                                    onDesfocar={verGrade}
-                                    onTelaCheia={telaCheiaSuportada ? alternarTelaCheia : undefined}
-                                    emTelaCheia={telaCheia}
-                                    extras={
-                                        outros.length > 0 && !telaCheia && (
-                                            <AcaoBloco
-                                                dica={faixaOculta ? `Mostrar os outros (${outros.length})` : "Esconder os outros"}
-                                                onClick={() => setFaixaOculta((v) => !v)}
-                                            >
-                                                {faixaOculta ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
-                                            </AcaoBloco>
-                                        )
-                                    }
-                                />
+                                {focaYoutube && videoYoutube ? (
+                                    <div className="bloco bloco-destaque bloco-youtube">
+                                        <div className="bloco-midia">
+                                            <PlayerYoutube
+                                                estado={videoYoutube}
+                                                posicaoAgora={youtube.posicaoAgora}
+                                                enviar={youtube.enviar}
+                                                volume={volumeYoutube}
+                                                mudo={surdo}
+                                            />
+                                        </div>
+                                        <ControlesYoutube compacto />
+                                        <div className="bloco-acoes" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                                            {!telaCheia && (
+                                                <AcaoBloco dica="Voltar para a grade" onClick={verGrade}>
+                                                    <PinOff size={16} />
+                                                </AcaoBloco>
+                                            )}
+                                            {telaCheiaSuportada && (
+                                                <AcaoBloco dica={telaCheia ? "Sair da tela cheia (F)" : "Tela cheia (F)"} onClick={alternarTelaCheia}>
+                                                    {telaCheia ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                                                </AcaoBloco>
+                                            )}
+                                            {qtdOutros > 0 && !telaCheia && (
+                                                <AcaoBloco
+                                                    dica={faixaOculta ? `Mostrar os outros (${qtdOutros})` : "Esconder os outros"}
+                                                    onClick={() => setFaixaOculta((v) => !v)}
+                                                >
+                                                    {faixaOculta ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+                                                </AcaoBloco>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : focado && (
+                                    <Bloco
+                                        key={focado.chave}
+                                        trackRef={focado.trackRef}
+                                        membros={membros}
+                                        eu={eu}
+                                        modo="destaque"
+                                        onDesfocar={verGrade}
+                                        onTelaCheia={telaCheiaSuportada ? alternarTelaCheia : undefined}
+                                        emTelaCheia={telaCheia}
+                                        extras={
+                                            qtdOutros > 0 && !telaCheia && (
+                                                <AcaoBloco
+                                                    dica={faixaOculta ? `Mostrar os outros (${qtdOutros})` : "Esconder os outros"}
+                                                    onClick={() => setFaixaOculta((v) => !v)}
+                                                >
+                                                    {faixaOculta ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+                                                </AcaoBloco>
+                                            )
+                                        }
+                                    />
+                                )}
                             </div>
 
-                            {!faixaOculta && outros.length > 0 && (
+                            {!faixaOculta && qtdOutros > 0 && (
                                 <div className="foco-faixa">
+                                    {youtubeNaFaixa && videoYoutube && (
+                                        <CartaoYoutube titulo={videoYoutube.video!.titulo} modo="miniatura" onFocar={() => focar(CHAVE_YOUTUBE)} />
+                                    )}
                                     {outros.map((b) => (
                                         <Bloco
                                             key={b.chave}
@@ -250,6 +367,7 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
                     ) : (
                         <Grade
                             blocos={blocos}
+                            youtube={videoYoutube?.video?.titulo ?? null}
                             membros={membros}
                             eu={eu}
                             onFocar={focar}
@@ -262,7 +380,17 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
                     <Controles onSair={onSair} />
                 </div>
 
-                {chatAberto && <ChatAoVivo membros={membros} eu={eu} onFechar={() => setChatAberto(false)} />}
+                {chatAberto && <ChatAoVivo membros={membros} eu={eu} onFechar={() => setPainel(null)} />}
+                {(painel === "controle" || painel === "youtube") && (
+                    <PainelControle
+                        key={painel}
+                        membros={membros}
+                        eu={eu}
+                        telas={tracks.filter((t) => t.source === Track.Source.ScreenShare).filter(isTrackReference)}
+                        abaInicial={painel}
+                        onFechar={() => setPainel(null)}
+                    />
+                )}
             </div>
         </div>
     );
@@ -270,6 +398,8 @@ export function Palco({ voz, eu, membros, onSair, onMenu }: Props) {
 
 type GradeProps = {
     blocos: DadosBloco[];
+    // título do vídeo do YouTube junto, se tiver um (entra como mais um quadro)
+    youtube: string | null;
     membros: MapaMembros;
     eu: Usuario;
     onFocar: (chave: string) => void;
@@ -278,7 +408,7 @@ type GradeProps = {
 
 // todo mundo do mesmo tamanho, o maior que couber no espaço que sobra
 // (mede a área de verdade: muda com o chat aberto, a lista de membros, o tamanho da janela)
-function Grade({ blocos, membros, eu, onFocar, onTelaCheia }: GradeProps) {
+function Grade({ blocos, youtube, membros, eu, onFocar, onTelaCheia }: GradeProps) {
     const ref = useRef<HTMLDivElement>(null);
     const [area, setArea] = useState({ largura: 0, altura: 0 });
 
@@ -292,10 +422,13 @@ function Grade({ blocos, membros, eu, onFocar, onTelaCheia }: GradeProps) {
         return () => observador.disconnect();
     }, []);
 
-    const largura = larguraNaGrade(blocos.length, area.largura, area.altura, VAO);
+    const largura = larguraNaGrade(blocos.length + (youtube !== null ? 1 : 0), area.largura, area.altura, VAO);
 
     return (
         <div className="cena-grade" ref={ref}>
+            {youtube !== null && (
+                <CartaoYoutube titulo={youtube} modo="grade" largura={largura || undefined} onFocar={() => onFocar(CHAVE_YOUTUBE)} />
+            )}
             {blocos.map((b) => (
                 <Bloco
                     key={b.chave}
@@ -308,6 +441,34 @@ function Grade({ blocos, membros, eu, onFocar, onTelaCheia }: GradeProps) {
                     onTelaCheia={onTelaCheia ? () => onTelaCheia(b.chave) : undefined}
                 />
             ))}
+        </div>
+    );
+}
+
+type CartaoYoutubeProps = { titulo: string; modo: Exclude<ModoBloco, "destaque">; largura?: number; onFocar: () => void };
+
+// o YouTube junto fora do destaque: só um cartão (o player é um só, no destaque)
+function CartaoYoutube({ titulo, modo, largura, onFocar }: CartaoYoutubeProps) {
+    return (
+        <div className={`bloco bloco-${modo} bloco-tela clicavel`} style={largura ? { width: largura } : undefined} onClick={onFocar}>
+            <div className="bloco-midia">
+                <div className="bloco-aviso">
+                    <TvMinimalPlay size={modo === "miniatura" ? 20 : 28} />
+                    <strong>Assistindo junto</strong>
+                    {modo !== "miniatura" && <span>Clique pra ver o vídeo.</span>}
+                </div>
+            </div>
+            {modo === "grade" && (
+                <div className="bloco-acoes" onClick={(e) => e.stopPropagation()}>
+                    <AcaoBloco dica="Destacar" onClick={onFocar}>
+                        <Pin size={16} />
+                    </AcaoBloco>
+                </div>
+            )}
+            <div className="bloco-rotulo">
+                <TvMinimalPlay size={14} />
+                <span className="truncar">{titulo}</span>
+            </div>
         </div>
     );
 }

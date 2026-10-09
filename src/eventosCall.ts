@@ -1,3 +1,5 @@
+import { roomService } from "./config/RoomService";
+
 interface ParticipanteCall {
     usuarioId : string,
     mostrandoTela: boolean
@@ -22,7 +24,7 @@ export function entrouNaCall(canalId: string, usuarioId: string) {
 }
 
 export function saiuDaCall(canalId: string, usuarioId: string) {
-    const set = calls.get(canalId); 
+    const set = calls.get(canalId);
 
     set?.delete(usuarioId);
 
@@ -36,8 +38,21 @@ export function devolverTempoCall(canalId:string) {
     return inicioCalls.get(canalId);
 }
 
+// canais com alguém dentro, pela lista (pra conferir com o LiveKit)
+export function canaisComGente() {
+    return [...calls.keys()];
+}
+
 export function participantesDaCall(canalId: string) {
     return [...(calls.get(canalId)?.keys() ?? [])];
+}
+
+// a lista acima vem dos webhooks do LiveKit e some quando o servidor reinicia (ou fica
+// vazia se o webhook não chega). Se a pessoa não está nela, pergunta pro próprio LiveKit
+export async function estaNaCall(canalId: string, usuarioId: string) {
+    if (calls.get(canalId)?.has(usuarioId)) return true;
+    const participante = await roomService.getParticipant(canalId, usuarioId).catch(() => null);
+    return participante !== null;
 }
 
 export function limparCall(canalId: string) {
@@ -48,7 +63,7 @@ export function limparCall(canalId: string) {
 export function mudarTela(canalId: string,usuarioId: string,mostrandoTela: boolean) {
     const participante = calls.get(canalId)?.get(usuarioId);
 
-    if(participante) participante.mostrandoTela = mostrandoTela; 
+    if(participante) participante.mostrandoTela = mostrandoTela;
 }
 
 export function telasDaCall(canalId: string) {
